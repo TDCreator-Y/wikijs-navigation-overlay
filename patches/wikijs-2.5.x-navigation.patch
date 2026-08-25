@@ -1,210 +1,858 @@
-diff --git a/client/components/admin/admin-navigation.vue b/client/components/admin/admin-navigation.vue
-index e4796c2..8f40525 100644
---- a/client/components/admin/admin-navigation.vue
-+++ b/client/components/admin/admin-navigation.vue
-@@ -89,12 +89,13 @@
-                           v-list-item-avatar(size='24'): v-icon(color='blue lighten-3') mdi-alert
-                           v-list-item-content
-                             em.caption.blue--text.text--lighten-4 {{$t('navigation.emptyList')}}
--                        draggable(v-model='currentTree')
-+                        draggable(v-model='currentTree', @change='handleTreeDrag')
-                           template(v-for='navItem in currentTree')
-                             v-list-item(
-                               v-if='navItem.kind === "link"'
-                               :key='navItem.id'
-                               :class='(navItem === current) ? "blue" : ""'
-+                              :style='itemIndentStyle(navItem)'
-                               @click='selectItem(navItem)'
-                               )
-                               v-list-item-avatar(size='24', tile)
-@@ -105,6 +106,7 @@
-                               v-else-if='navItem.kind === "divider"'
-                               :key='navItem.id'
-                               :class='(navItem === current) ? "blue" : ""'
-+                              :style='itemIndentStyle(navItem)'
-                               @click='selectItem(navItem)'
-                               )
-                               v-divider
-@@ -112,6 +114,7 @@
-                               v-else-if='navItem.kind === "header"'
-                               :key='navItem.id'
-                               :class='(navItem === current) ? "blue" : ""'
-+                              :style='itemIndentStyle(navItem)'
-                               @click='selectItem(navItem)'
-                               ) {{navItem.label}}
-                       v-card-chin
-@@ -222,6 +225,26 @@
-                             span {{$t('navigation.delete', { kind: $t('navigation.divider') })}}
- 
-                       v-card-text(v-if='current.kind')
-+                        .d-flex.align-center.flex-wrap.mb-4.pl-8
-+                          .caption.mr-3 Navigation level: {{itemDepth(current) + 1}} / 3
-+                          v-btn.mr-2(
-+                            small
-+                            outlined
-+                            color='primary'
-+                            :disabled='!canIndent(current)'
-+                            @click='indentItem(current)'
-+                            )
-+                            v-icon(left, small) mdi-format-indent-increase
-+                            span Indent
-+                          v-btn(
-+                            small
-+                            outlined
-+                            color='primary'
-+                            :disabled='!canOutdent(current)'
-+                            @click='outdentItem(current)'
-+                            )
-+                            v-icon(left, small) mdi-format-indent-decrease
-+                            span Outdent
-                         v-radio-group.pl-8(v-model='current.visibilityMode', mandatory, hide-details)
-                           v-radio(:label='$t("admin:navigation.visibilityMode.all")', value='all', color='primary')
-                           v-radio.mt-3(:label='$t("admin:navigation.visibilityMode.restricted")', value='restricted', color='primary')
-@@ -344,12 +367,84 @@ export default {
-     }
-   },
-   methods: {
-+    itemById (id, items = this.currentTree) {
-+      return _.find(items, ['id', id]) || null
+diff --git a/client/components/admin.vue b/client/components/admin.vue
+index 1d0762f..ce8e2c6 100644
+--- a/client/components/admin.vue
++++ b/client/components/admin.vue
+@@ -23,6 +23,9 @@
+             v-list-item(to='/navigation', color='primary', v-if='hasPermission([`manage:system`, `manage:navigation`])')
+               v-list-item-avatar(size='24', tile): v-icon mdi-near-me
+               v-list-item-title {{ $t('admin:navigation.title') }}
++            v-list-item(to='/navigation-tree', color='primary', v-if='hasPermission(["manage:system", "manage:navigation"])')
++              v-list-item-avatar(size='24', tile): v-icon mdi-file-tree
++              v-list-item-title 导航树管理
+             v-list-item(to='/pages', color='primary', v-if='hasPermission([`manage:system`, `write:pages`, `manage:pages`, `delete:pages`])')
+               v-list-item-avatar(size='24', tile): v-icon mdi-file-document-outline
+               v-list-item-title {{ $t('admin:pages.title') }}
+@@ -148,6 +151,7 @@ const router = new VueRouter({
+     { path: '/general', component: () => import(/* webpackChunkName: "admin" */ './admin/admin-general.vue') },
+     { path: '/locale', component: () => import(/* webpackChunkName: "admin" */ './admin/admin-locale.vue') },
+     { path: '/navigation', component: () => import(/* webpackChunkName: "admin" */ './admin/admin-navigation.vue') },
++    { path: '/navigation-tree', component: () => import(/* webpackChunkName: "admin" */ './admin/admin-navigation-tree.vue') },
+     { path: '/pages', component: () => import(/* webpackChunkName: "admin" */ './admin/admin-pages.vue') },
+     { path: '/pages/:id(\\d+)', component: () => import(/* webpackChunkName: "admin" */ './admin/admin-pages-edit.vue') },
+     { path: '/pages/visualize', component: () => import(/* webpackChunkName: "admin" */ './admin/admin-pages-visualize.vue') },
+diff --git a/client/components/admin/admin-navigation-tree-node.vue b/client/components/admin/admin-navigation-tree-node.vue
+new file mode 100644
+index 0000000..e2a62c3
+--- /dev/null
++++ b/client/components/admin/admin-navigation-tree-node.vue
+@@ -0,0 +1,253 @@
++<template lang='pug'>
++  .nav-tree-branch(:class='`nav-tree-level-${level + 1}`')
++    draggable.nav-tree-list(
++      :list='nodes'
++      :group='groupOptions'
++      :animation='160'
++      handle='.nav-tree-handle'
++      ghost-class='nav-tree-ghost'
++      chosen-class='nav-tree-chosen'
++      @start='$emit(`drag-start`)'
++      @change='$emit(`change`, $event)'
++      @end='$emit(`drag-end`)'
++      )
++      template(v-for='node in nodes')
++        .nav-tree-entry(
++          :key='node.id'
++          :class='{ "nav-tree-entry-selected": selectedId === node.id, "nav-tree-entry-match": isMatch(node) }'
++          )
++          .nav-tree-entry-main(@click='$emit(`select`, node)')
++            v-btn.nav-tree-handle(icon, small, :aria-label='`拖动${node.label || `未命名节点`}`')
++              v-icon(small) mdi-drag-vertical
++            v-btn.nav-tree-expand(
++              icon
++              small
++              :aria-label='isExpanded(node) ? `收起${node.label || `未命名节点`}` : `展开${node.label || `未命名节点`}`'
++              @click.stop='toggle(node)'
++              )
++              v-icon(small) {{ isExpanded(node) ? `mdi-chevron-down` : `mdi-chevron-right` }}
++            v-icon.nav-tree-kind(small) {{ node.icon || kindIcon(node) }}
++            .nav-tree-label {{node.label || '未命名节点'}}
++            v-chip.ml-2(x-small, outlined) {{levelLabel(level)}}
++            v-chip.ml-2.nav-tree-kind-chip(x-small, :color='kindColor(node)', outlined) {{kindLabel(node)}}
++            v-spacer
++            v-btn(
++              v-if='level < 2'
++              icon
++              small
++              aria-label='添加子项'
++              @click.stop='$emit(`add-child`, node)'
++              )
++              v-icon(small) mdi-plus
++          .nav-tree-children(v-show='isExpanded(node)', v-if='level < 2')
++            navigation-tree-node(
++              :nodes='node.children'
++              :level='level + 1'
++              :selected-id='selectedId'
++              :search='search'
++              :group-name='groupName'
++              @select='$emit(`select`, $event)'
++              @add-child='$emit(`add-child`, $event)'
++              @drag-start='$emit(`drag-start`)'
++              @change='$emit(`change`, $event)'
++              @drag-end='$emit(`drag-end`)'
++              )
++    .nav-tree-empty(v-if='nodes.length === 0')
++      v-icon.mr-2(small) mdi-arrow-down
++      span {{level === 0 ? '暂无导航，请点击“添加根节点”开始' : '可将节点拖拽到此处设置为子项'}}
++</template>
++
++<script>
++import draggable from 'vuedraggable'
++
++export default {
++  name: 'NavigationTreeNode',
++  components: {
++    draggable
++  },
++  props: {
++    nodes: {
++      type: Array,
++      default: () => []
 +    },
-+    itemDepth (item) {
-+      let depth = 0
-+      let current = item
-+      const seen = new Set()
-+      while (current && current.parentId && depth < 3) {
-+        if (seen.has(current.parentId)) break
-+        seen.add(current.parentId)
-+        current = this.itemById(current.parentId)
-+        if (!current) break
-+        depth += 1
++    level: {
++      type: Number,
++      default: 0
++    },
++    selectedId: {
++      type: String,
++      default: ''
++    },
++    search: {
++      type: String,
++      default: ''
++    },
++    groupName: {
++      type: String,
++      default: 'wiki-navigation-tree'
++    }
++  },
++  data() {
++    return {
++      expanded: {}
++    }
++  },
++  computed: {
++    groupOptions() {
++      return {
++        name: this.groupName,
++        pull: true,
++        put: true
 +      }
-+      return depth
-+    },
-+    itemIndentStyle (item) {
-+      return { paddingLeft: `${12 + (this.itemDepth(item) * 20)}px` }
-+    },
-+    isDescendant (candidate, ancestor) {
-+      let current = candidate
-+      const seen = new Set()
-+      while (current && current.parentId) {
-+        if (seen.has(current.parentId)) return true
-+        seen.add(current.parentId)
-+        if (current.parentId === ancestor.id) return true
-+        current = this.itemById(current.parentId)
++    }
++  },
++  watch: {
++    nodes: {
++      deep: true,
++      handler() {
++        this.expandBranches()
 +      }
-+      return false
++    }
++  },
++  created() {
++    this.expandBranches()
++    this.$root.$on('navigation-tree-expand-all', this.expandAll)
++    this.$root.$on('navigation-tree-collapse-all', this.collapseAll)
++  },
++  beforeDestroy() {
++    this.$root.$off('navigation-tree-expand-all', this.expandAll)
++    this.$root.$off('navigation-tree-collapse-all', this.collapseAll)
++  },
++  methods: {
++    expandBranches() {
++      this.nodes.forEach(node => {
++        if (node.children && node.children.length > 0 && typeof this.expanded[node.id] === 'undefined') {
++          this.$set(this.expanded, node.id, true)
++        }
++      })
 +    },
-+    previousSibling (item) {
-+      const items = this.currentTree
-+      const index = _.findIndex(items, ['id', item.id])
-+      if (index < 0) return null
-+      for (let idx = index - 1; idx >= 0; idx -= 1) {
-+        if ((items[idx].parentId || null) === (item.parentId || null)) return items[idx]
++    expandAll() {
++      this.nodes.forEach(node => this.$set(this.expanded, node.id, true))
++    },
++    collapseAll() {
++      this.nodes.forEach(node => this.$set(this.expanded, node.id, false))
++    },    toggle(node) {
++      this.$set(this.expanded, node.id, !this.isExpanded(node))
++    },
++    isExpanded(node) {
++      return this.expanded[node.id] === true
++    },
++    isMatch(node) {
++      const query = (this.search || '').trim().toLocaleLowerCase()
++      return Boolean(query && (node.label || '').toLocaleLowerCase().indexOf(query) >= 0)
++    },
++    levelLabel(level) {
++      return `${level + 1}级`
++    },
++    kindLabel(node) {
++      if (node.kind === 'header') return '分组'
++      if (node.kind === 'divider') return '分隔线'
++      return '链接'
++    },
++    kindColor(node) {
++      if (node.kind === 'header') return 'teal'
++      if (node.kind === 'divider') return 'grey'
++      return 'primary'
++    },
++    kindIcon(node) {
++      if (node.kind === 'header') return 'mdi-format-title'
++      if (node.kind === 'divider') return 'mdi-minus'
++      return 'mdi-link'
++    }
++  }
++}
++</script>
++
++<style lang='scss' scoped>
++.nav-tree-list {
++  min-height: 10px;
++}
++
++.nav-tree-entry {
++  margin: 3px 0;
++  border: 1px solid transparent;
++  border-radius: 4px;
++}
++
++.nav-tree-entry-main {
++  display: flex;
++  align-items: center;
++  min-height: 46px;
++  padding: 0 8px;
++  border: 1px solid rgba(0, 0, 0, .08);
++  border-radius: 4px;
++  background: #FFF;
++  cursor: pointer;
++  transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
++}
++
++.nav-tree-entry-main:hover {
++  border-color: rgba(0, 150, 136, .65);
++  box-shadow: 0 2px 5px rgba(0, 0, 0, .08);
++}
++
++.nav-tree-entry-selected .nav-tree-entry-main {
++  border-color: #009688;
++  background: rgba(0, 150, 136, .08);
++  box-shadow: 0 2px 6px rgba(0, 150, 136, .14);
++}
++
++.nav-tree-entry-match .nav-tree-entry-main {
++  background: rgba(255, 193, 7, .18);
++}
++
++.nav-tree-handle {
++  cursor: grab;
++}
++
++.nav-tree-handle:active {
++  cursor: grabbing;
++}
++
++.nav-tree-expand {
++  flex: 0 0 32px;
++}
++
++.nav-tree-kind {
++  flex: 0 0 24px;
++  margin: 0 8px 0 2px;
++}
++
++.nav-tree-label {
++  overflow: hidden;
++  max-width: 420px;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.nav-tree-kind-chip {
++  min-width: 42px;
++  justify-content: center;
++}
++
++.nav-tree-children {
++  margin: 4px 0 4px 28px;
++  padding-left: 12px;
++  border-left: 2px solid rgba(0, 150, 136, .22);
++}
++
++.nav-tree-empty {
++  min-height: 36px;
++  margin: 4px 0;
++  padding: 8px 12px;
++  border: 1px dashed rgba(0, 150, 136, .45);
++  border-radius: 4px;
++  color: #607D8B;
++  text-align: center;
++}
++
++.nav-tree-ghost .nav-tree-entry-main {
++  background: rgba(0, 150, 136, .16);
++  border: 1px dashed #009688;
++}
++</style>
+\ No newline at end of file
+diff --git a/client/components/admin/admin-navigation-tree.vue b/client/components/admin/admin-navigation-tree.vue
+new file mode 100644
+index 0000000..3f9c8ee
+--- /dev/null
++++ b/client/components/admin/admin-navigation-tree.vue
+@@ -0,0 +1,566 @@
++<template lang='pug'>
++  v-container(fluid, grid-list-lg)
++    v-layout(row wrap)
++      v-flex(xs12)
++        .admin-header
++          img.animated.fadeInUp(src='/_assets/svg/icon-triangle-arrow.svg', alt='导航树管理', style='width: 80px;')
++          .admin-header-title
++            .headline.primary--text.animated.fadeInLeft 导航树管理
++            .subtitle-1.grey--text.animated.fadeInLeft.wait-p4s 可视化管理最多三级导航结构和排序
++          v-spacer
++          v-btn.animated.fadeInDown(icon, outlined, color='grey', href='/a/navigation', aria-label='打开原导航设置')
++            v-icon mdi-tune
++          v-btn.animated.fadeInDown.wait-p2s.mx-3(icon, outlined, color='grey', @click='refresh', aria-label='刷新导航')
++            v-icon mdi-refresh
++          v-btn.animated.fadeInDown(color='success', depressed, large, :loading='saving', :disabled='!isDirty', @click='save')
++            v-icon(left) mdi-check
++            span 保存
++
++      v-flex(xs12)
++        v-row(dense)
++          v-col(cols='3')
++            v-card.animated.fadeInUp
++              v-toolbar(color='teal', dark, dense, flat, height='56')
++                v-toolbar-title.subtitle-1 页面操作
++              v-card-text
++                v-select(
++                  v-model='currentLang'
++                  :items='localeOptions'
++                  item-text='nativeName'
++                  item-value='code'
++                  outlined
++                  dense
++                  hide-details
++                  prepend-icon='mdi-web'
++                  label='导航语言'
++                  @change='switchLocale'
++                )
++                v-alert.mt-4.mb-0(color='blue lighten-5', text, dense, icon='mdi-information-outline')
++                  div 当前导航模式：#[strong {{modeLabel}}]
++                  div.mt-1 模式设置请前往原导航设置页面。
++                  v-btn.mt-2(text, small, color='primary', href='/a/navigation') 打开原导航设置
++                v-text-field.mt-4(
++                  v-model='search'
++                  outlined
++                  dense
++                  clearable
++                  hide-details
++                  prepend-inner-icon='mdi-magnify'
++                  label='搜索节点'
++                )
++                .d-flex.flex-wrap.mt-4
++                  v-btn.mr-2.mb-2(small, outlined, color='primary', @click='addRoot')
++                    v-icon(left, small) mdi-plus
++                    span 添加根节点
++                  v-btn.mr-2.mb-2(small, text, color='primary', @click='expandAll')
++                    v-icon(left, small) mdi-arrow-expand-all
++                    span 全部展开
++                  v-btn.mb-2(small, text, color='primary', @click='collapseAll')
++                    v-icon(left, small) mdi-arrow-collapse-all
++                    span 全部折叠
++                v-divider.my-4
++                .d-flex.align-center
++                  v-icon.mr-2(color='teal') mdi-drag-variant
++                  .body-2 拖拽节点可调整顺序或设置父子关系。
++                .caption.grey--text.mt-2 最多支持三级，保存前会自动检查循环和非法层级。
++                .d-flex.flex-wrap.mt-4
++                  v-btn.mr-2(small, outlined, @click='exportJson')
++                    v-icon(left, small) mdi-download
++                    span 导出导航
++                  v-btn(small, outlined, @click='openImport')
++                    v-icon(left, small) mdi-upload
++                    span 导入导航
++                input(ref='importFile', type='file', accept='application/json,.json', style='display:none', @change='importJson')
++
++          v-col(cols='5')
++            v-card.animated.fadeInUp.wait-p2s
++              v-toolbar(color='blue darken-2', dark, dense, flat, height='56')
++                v-toolbar-title.subtitle-1 导航结构
++                v-spacer
++                v-chip(x-small, color='white', text-color='blue darken-2') {{treeNodes.length}} 个根节点
++              v-card-text.pa-3.nav-tree-panel
++                navigation-tree-node(
++                  :nodes='treeNodes'
++                  :selected-id='selectedId'
++                  :search='search'
++                  @select='selectNode'
++                  @add-child='addChild'
++                  @drag-start='startDrag'
++                  @change='treeChanged'
++                  @drag-end='finishDrag'
++                )
++
++          v-col(cols='4')
++            v-card.animated.fadeInUp.wait-p3s
++              v-toolbar(color='teal lighten-1', dark, dense, flat, height='56')
++                v-toolbar-title.subtitle-1 节点设置
++                v-spacer
++                v-btn(v-if='selected', icon, small, aria-label='删除节点', @click='deleteSelected')
++                  v-icon mdi-delete
++              v-card-text(v-if='selected')
++                v-alert.mb-4(color='teal lighten-5', text, dense, icon='mdi-file-tree')
++                  div 当前层级：#[strong {{selectedDepth}} / 3]
++                  div.mt-1 父节点：{{selectedParentLabel}}
++                v-select(
++                  v-model='selected.kind'
++                  :items='nodeKinds'
++                  item-text='text'
++                  item-value='value'
++                  outlined
++                  dense
++                  label='节点类型'
++                  prepend-icon='mdi-shape-outline'
++                  @change='markDirty'
++                )
++                v-text-field(v-model='selected.label', outlined, dense, counter='255', label='显示名称', prepend-icon='mdi-format-title', @input='markDirty')
++                v-text-field(v-model='selected.icon', outlined, dense, label='图标名称', prepend-icon='mdi-dice-5', hint='例如 mdi-home、mdi-book-open-variant', persistent-hint, @input='markDirty')
++                template(v-if='selected.kind === "link"')
++                  v-select(v-model='selected.targetType', :items='targetTypes', item-text='text', item-value='value', outlined, dense, label='目标类型', prepend-icon='mdi-near-me', @change='markDirty')
++                  .d-flex.align-center(v-if='selected.targetType === "page"')
++                    v-text-field(v-model='selected.target', outlined, dense, label='页面地址', prepend-icon='mdi-link', @input='markDirty')
++                    v-btn.ml-2(color='primary', depressed, @click='selectPage')
++                      v-icon(left, small) mdi-magnify
++                      span 选择页面
++                  v-text-field(v-else-if='selected.targetType === "external" || selected.targetType === "externalblank"', v-model='selected.target', outlined, dense, label='链接地址', prepend-icon='mdi-link-variant', @input='markDirty')
++                v-divider.my-4
++                v-radio-group(v-model='selected.visibilityMode', mandatory, hide-details, @change='markDirty')
++                  v-radio(label='所有人可见', value='all', color='primary')
++                  v-radio.mt-2(label='仅指定用户组可见', value='restricted', color='primary')
++                v-select.mt-4(v-model='selected.visibilityGroups', :items='groups', item-text='name', item-value='id', outlined, dense, multiple, clearable, label='可见用户组', prepend-icon='mdi-account-group', :disabled='selected.visibilityMode !== "restricted"', @change='markDirty')
++              v-card-text.grey--text(v-else)
++                .text-center.py-12
++                  v-icon(size='48', color='grey lighten-1') mdi-cursor-pointer
++                  .body-2.mt-3 请在左侧选择一个节点
++                  .caption.mt-1 也可以直接拖拽节点调整层级
++
++    page-selector(mode='select', v-model='selectPageModal', :open-handler='selectPageHandle', path='home', :locale='currentLang')
++</template>
++
++<script>
++import _ from 'lodash'
++import gql from 'graphql-tag'
++import { v4 as uuid } from 'uuid'
++
++import groupsQuery from 'gql/admin/users/users-query-groups.gql'
++import NavigationTreeNode from './admin-navigation-tree-node.vue'
++
++/* global siteConfig, siteLangs */
++
++export default {
++  components: {
++    NavigationTreeNode
++  },
++  data() {
++    return {
++      trees: [],
++      treeNodes: [],
++      selectedId: '',
++      currentLang: siteConfig.lang,
++      loadedLang: siteConfig.lang,
++      allLocales: [],
++      groups: [],
++      search: '',
++      saving: false,
++      isDirty: false,
++      dragSnapshot: null,
++      selectPageModal: false,
++      config: {
++        mode: 'NONE'
++      },
++      nodeKinds: [
++        { text: '链接', value: 'link' },
++        { text: '分组标题', value: 'header' },
++        { text: '分隔线', value: 'divider' }
++      ],
++      targetTypes: [
++        { text: '站点首页', value: 'home' },
++        { text: 'Wiki.js 页面', value: 'page' },
++        { text: '外部链接', value: 'external' },
++        { text: '外部链接（新窗口打开）', value: 'externalblank' }
++      ]
++    }
++  },
++  computed: {
++    localeOptions() {
++      return _.intersectionBy(this.allLocales, _.unionBy(siteLangs, [{ code: 'en' }, { code: siteConfig.lang }], 'code'), 'code')
++    },
++    currentItems() {
++      const tree = _.find(this.trees, ['locale', this.loadedLang])
++      return tree ? (tree.items || []) : []
++    },
++    selected() {
++      return this.findNode(this.treeNodes, this.selectedId)
++    },
++    selectedDepth() {
++      const result = this.findNodeWithDepth(this.treeNodes, this.selectedId, 1)
++      return result ? result.depth : 1
++    },
++    selectedParentLabel() {
++      if (!this.selected || !this.selected.parentId) return '根节点'
++      const parent = this.findNode(this.treeNodes, this.selected.parentId)
++      return parent ? (parent.label || '未命名节点') : '根节点'
++    },
++    modeLabel() {
++      return {
++        TREE: '站点地图',
++        STATIC: '静态导航',
++        MIXED: '自定义导航',
++        NONE: '无'
++      }[this.config.mode] || '未设置'
++    }
++  },
++  watch: {
++    trees: {
++      deep: true,
++      handler() {
++        if (!this.isDirty) this.loadCurrentLocale()
++      }
++    }
++  },
++  beforeRouteLeave(to, from, next) {
++    if (this.isDirty && !window.confirm('当前有未保存的修改，离开页面后将丢失。是否继续？')) {
++      next(false)
++      return
++    }
++    next()
++  },
++  methods: {
++    loadCurrentLocale() {
++      this.loadedLang = this.currentLang
++      this.treeNodes = this.buildTree(this.currentItems)
++      this.selectedId = ''
++      this.dragSnapshot = null
++    },
++    switchLocale(nextLocale) {
++      if (this.isDirty && !window.confirm('当前语言有未保存的修改，切换后将丢失这些修改。是否继续？')) {
++        this.$nextTick(() => { this.currentLang = this.loadedLang })
++        return
++      }
++      this.isDirty = false
++      this.currentLang = nextLocale
++      this.loadCurrentLocale()
++    },
++    buildTree(items) {
++      const source = Array.isArray(items) ? items : []
++      const nodes = source.map((item, index) => ({
++        ..._.cloneDeep(item),
++        id: String(item.id || uuid()),
++        kind: item.kind || 'link',
++        label: item.label || '',
++        icon: item.icon || '',
++        targetType: item.targetType || 'page',
++        target: item.target || '',
++        parentId: item.parentId || null,
++        order: Number.isFinite(Number(item.order)) ? Number(item.order) : index,
++        children: []
++      }))
++      const byId = _.keyBy(nodes, 'id')
++      const roots = []
++      const hasExplicitParent = nodes.some(node => Boolean(node.parentId))
++
++      if (!hasExplicitParent) {
++        let section = null
++        nodes.forEach(node => {
++          if (node.kind === 'header') {
++            section = node
++            roots.push(node)
++          } else if (node.kind === 'link' && section) {
++            node.parentId = section.id
++            section.children.push(node)
++          } else {
++            if (node.kind === 'divider') section = null
++            roots.push(node)
++          }
++        })
++      } else {
++        nodes.forEach(node => {
++          const parent = node.parentId ? byId[node.parentId] : null
++          if (parent && parent.id !== node.id) parent.children.push(node)
++          else roots.push(node)
++        })
++        let section = null
++        const groupedRoots = []
++        roots.forEach(node => {
++          if (node.parentId) {
++            section = null
++            groupedRoots.push(node)
++          } else if (node.kind === 'header') {
++            section = node
++            groupedRoots.push(node)
++          } else if (node.kind === 'link' && section) {
++            node.parentId = section.id
++            section.children.push(node)
++          } else {
++            if (node.kind === 'divider') section = null
++            groupedRoots.push(node)
++          }
++        })
++        return this.sortTree(groupedRoots)
++      }
++      return this.sortTree(roots)
++    },
++    sortTree(nodes) {
++      const list = Array.isArray(nodes) ? nodes : []
++      list.sort((a, b) => a.order - b.order || String(a.id).localeCompare(String(b.id)))
++      list.forEach(node => { node.children = this.sortTree(node.children) })
++      return list
++    },
++    findNode(nodes, id) {
++      for (const node of nodes || []) {
++        if (node.id === id) return node
++        const child = this.findNode(node.children, id)
++        if (child) return child
 +      }
 +      return null
 +    },
-+    canIndent (item) {
-+      const previous = this.previousSibling(item)
-+      return Boolean(previous && this.itemDepth(item) < 2 && !this.isDescendant(previous, item))
++    findNodeWithDepth(nodes, id, depth) {
++      for (const node of nodes || []) {
++        if (node.id === id) return { node, depth }
++        const child = this.findNodeWithDepth(node.children, id, depth + 1)
++        if (child) return child
++      }
++      return null
 +    },
-+    canOutdent (item) {
-+      return Boolean(item && item.parentId && this.itemById(item.parentId))
-+    },
-+    normalizeOrders () {
-+      const counters = {}
-+      this.currentTree.forEach(item => {
-+        const key = item.parentId || '__root__'
-+        const order = counters[key] || 0
-+        this.$set(item, 'order', order)
-+        counters[key] = order + 1
++    flattenTree(nodes, parentId, result = []) {
++      const parent = typeof parentId === 'undefined' ? null : parentId
++      ;(nodes || []).forEach((node, index) => {
++        const item = _.cloneDeep(node)
++        delete item.children
++        item.parentId = parent
++        item.order = index
++        result.push(item)
++        this.flattenTree(node.children, node.id, result)
 +      })
++      return result
 +    },
-+    indentItem (item) {
-+      if (!this.canIndent(item)) return
-+      const previous = this.previousSibling(item)
-+      this.$set(item, 'parentId', previous.id)
-+      this.normalizeOrders()
-+    },
-+    outdentItem (item) {
-+      if (!this.canOutdent(item)) return
-+      const parent = this.itemById(item.parentId)
-+      this.$set(item, 'parentId', parent ? (parent.parentId || null) : null)
-+      this.normalizeOrders()
-+    },
-+    handleTreeDrag () {
-+      this.normalizeOrders()
-+    },
-     addItem(kind) {
-       let newItem = {
-         id: uuid(),
-         kind,
-         visibilityMode: 'all',
--        visibilityGroups: []
-+        visibilityGroups: [],
-+        parentId: null,
-+        order: this.currentTree.length
-       }
-       switch (kind) {
-         case 'link':
-@@ -369,7 +464,19 @@ export default {
-       this.current = newItem
-     },
-     deleteItem(item) {
--      this.currentTree = _.pull(this.currentTree, item)
-+      const removed = new Set([item.id])
-+      let changed = true
-+      while (changed) {
-+        changed = false
-+        this.currentTree.forEach(candidate => {
-+          if (candidate.parentId && removed.has(candidate.parentId) && !removed.has(candidate.id)) {
-+            removed.add(candidate.id)
-+            changed = true
-+          }
++    validateTree(nodes) {
++      let valid = true
++      const ids = new Set()
++      const walk = (items, depth) => {
++        ;(items || []).forEach(node => {
++          if (ids.has(node.id) || depth > 3) valid = false
++          ids.add(node.id)
++          walk(node.children, depth + 1)
 +        })
 +      }
-+      this.currentTree = this.currentTree.filter(candidate => !removed.has(candidate.id))
-+      this.normalizeOrders()
-       this.current = {}
-     },
-     selectItem(item) {
-@@ -383,9 +490,27 @@ export default {
-     },
-     copyFromLocale () {
-       this.copyFromLocaleDialogIsShown = false
--      this.currentTree = [...this.currentTree, ..._.get(_.find(this.trees, ['locale', this.copyFromLocaleCode]), 'items', null) || []]
-+      const sourceItems = _.get(_.find(this.trees, ['locale', this.copyFromLocaleCode]), 'items', []) || []
-+      const idMap = {}
-+      const copiedItems = sourceItems.map(item => {
-+        const newId = uuid()
-+        idMap[item.id] = newId
-+        return {
-+          ..._.cloneDeep(item),
-+          id: newId,
-+          parentId: null
-+        }
-+      })
-+      copiedItems.forEach(item => {
-+        const sourceItem = sourceItems.find(source => idMap[source.id] === item.id)
-+        const sourceParentId = sourceItem ? sourceItem.parentId : null
-+        item.parentId = sourceParentId ? (idMap[sourceParentId] || null) : null
-+      })
-+      this.currentTree = [...this.currentTree, ...copiedItems]
-+      this.normalizeOrders()
-     },
-     async save() {
-+      this.normalizeOrders()
-       this.$store.commit(`loadingStart`, 'admin-navigation-save')
-       try {
-         const resp = await this.$apollo.mutate({
-@@ -472,6 +597,8 @@ export default {
-                 target
-                 visibilityMode
-                 visibilityGroups
-+                parentId
-+                order
-               }
-             }
-           }
++      walk(nodes, 1)
++      return valid
++    },
++    normalizeTree() {
++      const walk = (items, parentId, depth) => {
++        ;(items || []).forEach((node, index) => {
++          this.$set(node, 'parentId', parentId)
++          this.$set(node, 'order', index)
++          walk(node.children, node.id, depth + 1)
++        })
++      }
++      walk(this.treeNodes, null, 1)
++      return this.validateTree(this.treeNodes)
++    },
++    selectNode(node) {
++      this.selectedId = node.id
++    },
++    addRoot() {
++      const node = this.newNode(null)
++      this.treeNodes.push(node)
++      this.selectedId = node.id
++      this.isDirty = true
++    },
++    addChild(parent) {
++      const node = this.newNode(parent.id)
++      parent.children.push(node)
++      this.selectedId = node.id
++      this.isDirty = true
++    },
++    newNode(parentId) {
++      return {
++        id: uuid(),
++        kind: 'link',
++        label: '未命名链接',
++        icon: 'mdi-chevron-right',
++        targetType: 'page',
++        target: '',
++        visibilityMode: 'all',
++        visibilityGroups: [],
++        parentId: parentId,
++        order: 0,
++        children: []
++      }
++    },
++    removeNode(nodes, id) {
++      const index = _.findIndex(nodes, ['id', id])
++      if (index >= 0) {
++        nodes.splice(index, 1)
++        return true
++      }
++      return (nodes || []).some(node => this.removeNode(node.children, id))
++    },
++    countChildren(node) {
++      return (node.children || []).reduce((count, child) => count + 1 + this.countChildren(child), 0)
++    },
++    deleteSelected() {
++      if (!this.selected) return
++      const count = this.countChildren(this.selected)
++      const suffix = count > 0 ? '，同时删除' + count + '个子节点' : ''
++      if (!window.confirm('确定删除“' + (this.selected.label || '未命名节点') + '”' + suffix + '吗？')) return
++      this.removeNode(this.treeNodes, this.selected.id)
++      this.selectedId = ''
++      this.isDirty = true
++    },
++    startDrag() {
++      this.dragSnapshot = _.cloneDeep(this.treeNodes)
++    },
++    treeChanged() {
++      this.isDirty = true
++    },
++    finishDrag() {
++      if (!this.normalizeTree()) {
++        this.treeNodes = this.dragSnapshot || this.treeNodes
++        this.$store.commit('showNotification', {
++          message: '不能创建超过三级或重复的导航层级。',
++          style: 'red',
++          icon: 'warning'
++        })
++        return
++      }
++      this.isDirty = true
++      this.dragSnapshot = null
++    },
++    markDirty() {
++      this.isDirty = true
++    },
++    expandAll() {
++      this.$root.$emit('navigation-tree-expand-all')
++    },
++    collapseAll() {
++      this.$root.$emit('navigation-tree-collapse-all')
++    },
++    openImport() {
++      this.$refs.importFile.click()
++    },
++    async importJson(event) {
++      const file = event.target.files && event.target.files[0]
++      if (!file) return
++      try {
++        const text = await file.text()
++        const data = JSON.parse(text)
++        const items = Array.isArray(data) ? data : data.items
++        const imported = this.buildTree(items || [])
++        if (!this.validateTree(imported)) throw new Error('层级超过三级或节点 ID 重复')
++        this.treeNodes = imported
++        this.selectedId = ''
++        this.isDirty = true
++        this.$store.commit('showNotification', { message: '导航导入成功，请检查后保存。', style: 'success', icon: 'check' })
++      } catch (err) {
++        this.$store.commit('showNotification', { message: '导入失败：' + (err.message || '文件格式不正确'), style: 'red', icon: 'warning' })
++      } finally {
++        event.target.value = ''
++      }
++    },
++    exportJson() {
++      const data = {
++        locale: this.loadedLang,
++        items: this.flattenTree(this.treeNodes)
++      }
++      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' })
++      const url = window.URL.createObjectURL(blob)
++      const link = document.createElement('a')
++      link.href = url
++      link.download = 'wikijs-navigation-' + this.loadedLang + '.json'
++      link.click()
++      window.URL.revokeObjectURL(url)
++    },
++    selectPage() {
++      this.selectPageModal = true
++    },
++    selectPageHandle({ path, locale }) {
++      if (!this.selected) return
++      this.selected.targetType = 'page'
++      this.selected.target = '/' + locale + '/' + path
++      this.isDirty = true
++    },
++    async save() {
++      if (!this.normalizeTree()) {
++        this.$store.commit('showNotification', { message: '保存失败：导航层级不能超过三级。', style: 'red', icon: 'warning' })
++        return
++      }
++      const currentItems = this.flattenTree(this.treeNodes)
++      const payload = this.trees.map(tree => ({
++        locale: tree.locale,
++        items: tree.locale === this.loadedLang ? currentItems : tree.items
++      }))
++      if (!_.some(payload, ['locale', this.loadedLang])) {
++        payload.push({ locale: this.loadedLang, items: currentItems })
++      }
++      this.saving = true
++      this.$store.commit('loadingStart', 'admin-navigation-tree-save')
++      try {
++        const resp = await this.$apollo.mutate({
++          mutation: gql('mutation ($tree: [NavigationTreeInput]!) { navigation { updateTree(tree: $tree) { responseResult { succeeded message } } } }'),
++          variables: { tree: payload }
++        })
++        const result = _.get(resp, 'data.navigation.updateTree.responseResult', {})
++        if (!result.succeeded) throw new Error(result.message || '服务器拒绝了本次保存')
++        this.trees = payload
++        this.isDirty = false
++        this.$store.commit('showNotification', { message: '导航保存成功。', style: 'success', icon: 'check' })
++      } catch (err) {
++        this.$store.commit('showNotification', { message: '保存失败：' + (err.message || '请稍后重试'), style: 'red', icon: 'warning' })
++      } finally {
++        this.saving = false
++        this.$store.commit('loadingStop', 'admin-navigation-tree-save')
++      }
++    },
++    async refresh() {
++      if (this.isDirty && !window.confirm('当前有未保存的修改，刷新后将丢失。是否继续？')) return
++      await this.$apollo.queries.trees.refetch()
++      this.isDirty = false
++      this.loadCurrentLocale()
++      this.$store.commit('showNotification', { message: '导航已刷新。', style: 'success', icon: 'cached' })
++    }
++  },
++  apollo: {
++    config: {
++      query: gql('query { navigation { config { mode } } }'),
++      fetchPolicy: 'network-only',
++      update: data => _.cloneDeep(data.navigation.config),
++      watchLoading(isLoading) {
++        this.$store.commit('loading' + (isLoading ? 'Start' : 'Stop'), 'admin-navigation-tree-config')
++      }
++    },
++    trees: {
++      query: gql('query { navigation { tree { locale items { id kind label icon targetType target visibilityMode visibilityGroups parentId order } } } }'),
++      fetchPolicy: 'network-only',
++      update: data => _.cloneDeep(data.navigation.tree),
++      watchLoading(isLoading) {
++        this.$store.commit('loading' + (isLoading ? 'Start' : 'Stop'), 'admin-navigation-tree-load')
++      }
++    },
++    groups: {
++      query: groupsQuery,
++      fetchPolicy: 'network-only',
++      update: data => data.groups.list,
++      watchLoading(isLoading) {
++        this.$store.commit('loading' + (isLoading ? 'Start' : 'Stop'), 'admin-navigation-tree-groups')
++      }
++    },
++    allLocales: {
++      query: gql('query { localization { locales { code name nativeName } } }'),
++      fetchPolicy: 'network-only',
++      update: data => data.localization.locales,
++      watchLoading(isLoading) {
++        this.$store.commit('loading' + (isLoading ? 'Start' : 'Stop'), 'admin-navigation-tree-locales')
++      }
++    }
++  }
++}
++</script>
++
++<style lang='scss' scoped>
++.nav-tree-panel {
++  min-height: 520px;
++  max-height: calc(100vh - 260px);
++  overflow-y: auto;
++  background: #fafafa;
++}
++</style>
+\ No newline at end of file
 diff --git a/client/themes/default/components/nav-sidebar-tree.vue b/client/themes/default/components/nav-sidebar-tree.vue
 new file mode 100644
 index 0000000..4e8a844

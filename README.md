@@ -6,8 +6,9 @@ This project keeps Wiki.js as the upstream application and adds:
 
 - expandable navigation with up to three levels;
 - independent expand/collapse controls and page links;
-- administrator-managed ordering in **Administration → Navigation**;
-- indent / outdent controls for changing hierarchy;
+- administrator-managed ordering in a separate **Navigation Tree** page;
+- direct tree drag-and-drop for changing hierarchy;
+- original Wiki.js navigation settings remain available as a fallback;
 - recursive permission filtering;
 - a versioned Docker build for 1Panel deployments.
 
@@ -23,10 +24,10 @@ Existing flat Wiki.js navigation remains compatible. A header groups following l
 
 In Wiki.js administration:
 
-1. Select **Custom Navigation** or **Static Navigation**.
-2. Drag items to change their order.
-3. Select an item and use **Indent** / **Outdent** to change its level.
-4. Click **Apply**.
+1. Select **Custom Navigation** or **Static Navigation** in the original navigation settings.
+2. Open **Administration → Navigation Tree** (URL: /a/navigation-tree).
+3. Select a language, then drag items above, below, or inside another item.
+4. Edit the node properties and click **Save**.
 
 ## Build
 
