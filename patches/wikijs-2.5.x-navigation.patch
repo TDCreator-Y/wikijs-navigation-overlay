@@ -22,10 +22,10 @@ index 1d0762f..ce8e2c6 100644
      { path: '/pages/visualize', component: () => import(/* webpackChunkName: "admin" */ './admin/admin-pages-visualize.vue') },
 diff --git a/client/components/admin/admin-navigation-tree-node.vue b/client/components/admin/admin-navigation-tree-node.vue
 new file mode 100644
-index 0000000..4ccdcdb
+index 0000000..9ea7f86
 --- /dev/null
 +++ b/client/components/admin/admin-navigation-tree-node.vue
-@@ -0,0 +1,267 @@
+@@ -0,0 +1,253 @@
 +<template lang='pug'>
 +  .nav-tree-branch(:class='`nav-tree-level-${level + 1}`')
 +    draggable.nav-tree-list(
@@ -56,7 +56,6 @@ index 0000000..4ccdcdb
 +              )
 +              v-icon(small) {{ isExpanded(node) ? `mdi-chevron-down` : `mdi-chevron-right` }}
 +            .nav-tree-expand-spacer(v-else)
-+            v-icon.nav-tree-kind(small) {{ nodeIcon(node) }}
 +            .nav-tree-label {{node.label || '未命名节点'}}
 +            v-chip.ml-2(x-small, outlined) {{levelLabel(level)}}
 +            v-chip.ml-2.nav-tree-kind-chip(x-small, :color='kindColor(node)', outlined) {{kindLabel(node)}}
@@ -152,9 +151,6 @@ index 0000000..4ccdcdb
 +    hasChildren(node) {
 +      return Boolean(node && node.children && node.children.length > 0)
 +    },
-+    nodeIcon(node) {
-+      return node.icon && node.icon !== 'mdi-chevron-right' ? node.icon : this.kindIcon(node)
-+    },
 +    expandBranches() {
 +      this.nodes.forEach(node => {
 +        if (node.children && node.children.length > 0 && typeof this.expanded[node.id] === 'undefined') {
@@ -189,11 +185,6 @@ index 0000000..4ccdcdb
 +      if (node.kind === 'header') return 'teal'
 +      if (node.kind === 'divider') return 'grey'
 +      return 'primary'
-+    },
-+    kindIcon(node) {
-+      if (node.kind === 'header') return 'mdi-format-title'
-+      if (node.kind === 'divider') return 'mdi-minus'
-+      return 'mdi-link'
 +    }
 +  }
 +}
@@ -253,11 +244,6 @@ index 0000000..4ccdcdb
 +  flex: 0 0 32px;
 +  width: 32px;
 +  height: 32px;
-+}
-+
-+.nav-tree-kind {
-+  flex: 0 0 24px;
-+  margin: 0 8px 0 2px;
 +}
 +
 +.nav-tree-label {
@@ -869,10 +855,10 @@ index 0000000..1d713a9
 \ No newline at end of file
 diff --git a/client/themes/default/components/nav-sidebar-tree.vue b/client/themes/default/components/nav-sidebar-tree.vue
 new file mode 100644
-index 0000000..9c834aa
+index 0000000..8576650
 --- /dev/null
 +++ b/client/themes/default/components/nav-sidebar-tree.vue
-@@ -0,0 +1,338 @@
+@@ -0,0 +1,327 @@
 +<template lang='pug'>
 +  v-list.nav-tree.py-2(dense, :class='color', :dark='dark')
 +    template(v-for='node in tree')
@@ -899,7 +885,6 @@ index 0000000..9c834aa
 +            :rel='node.targetType === `externalblank` ? `noopener noreferrer` : ``'
 +            :class='{ "nav-tree-link-active": isActive(node) }'
 +            )
-+            v-icon.nav-tree-icon(v-if='nodeIcon(node)', size='18') {{ nodeIcon(node) }}
 +            span.nav-tree-label {{ node.label }}
 +          button.nav-tree-label-button(
 +            v-else
@@ -907,7 +892,6 @@ index 0000000..9c834aa
 +            :aria-expanded='hasVisibleChildren(node) ? String(isExpanded(node)) : undefined'
 +            @click='hasVisibleChildren(node) ? toggle(node) : undefined'
 +            )
-+            v-icon.nav-tree-icon(v-if='nodeIcon(node)', size='18') {{ nodeIcon(node) }}
 +            span.nav-tree-label {{ node.label }}
 +        .nav-tree-children(v-if='hasVisibleChildren(node)', v-show='isExpanded(node)')
 +          nav-sidebar-tree(
@@ -1078,10 +1062,6 @@ index 0000000..9c834aa
 +
 +      return sort(groupedRoots)
 +    },
-+    nodeIcon(node) {
-+      if (node.icon && node.icon !== 'mdi-chevron-right') return node.icon
-+      return node.kind === 'link' ? 'mdi-link' : ''
-+    },
 +    isLink(node) {
 +      return node.kind === 'link'
 +    },
@@ -1194,11 +1174,6 @@ index 0000000..9c834aa
 +
 +.nav-tree-link-active {
 +  font-weight: 600;
-+}
-+
-+.nav-tree-icon {
-+  flex: 0 0 24px;
-+  margin-right: 6px;
 +}
 +
 +.nav-tree-label {
