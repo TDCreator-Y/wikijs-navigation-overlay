@@ -22,6 +22,10 @@ jobs:
       - name: Prepare upstream Wiki.js
         run: WIKI_COMMIT="${WIKIJS_COMMIT}" bash scripts/prepare-upstream.sh "${WIKIJS_VERSION}"
 
+      - name: Mark upstream build as release
+        working-directory: .build/wikijs
+        run: |
+          node -e "const fs = require('fs'); const file = 'package.json'; const pkg = JSON.parse(fs.readFileSync(file, 'utf8')); pkg.dev = false; pkg.version = process.env.WIKIJS_VERSION.replace(/^v/, ''); fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n')"
       - name: Set image tag
         id: image
         env:
