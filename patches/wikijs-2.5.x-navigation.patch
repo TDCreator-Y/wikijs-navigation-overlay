@@ -1,0 +1,729 @@
+diff --git a/client/components/admin/admin-navigation.vue b/client/components/admin/admin-navigation.vue
+index e4796c2..8f40525 100644
+--- a/client/components/admin/admin-navigation.vue
++++ b/client/components/admin/admin-navigation.vue
+@@ -89,12 +89,13 @@
+                           v-list-item-avatar(size='24'): v-icon(color='blue lighten-3') mdi-alert
+                           v-list-item-content
+                             em.caption.blue--text.text--lighten-4 {{$t('navigation.emptyList')}}
+-                        draggable(v-model='currentTree')
++                        draggable(v-model='currentTree', @change='handleTreeDrag')
+                           template(v-for='navItem in currentTree')
+                             v-list-item(
+                               v-if='navItem.kind === "link"'
+                               :key='navItem.id'
+                               :class='(navItem === current) ? "blue" : ""'
++                              :style='itemIndentStyle(navItem)'
+                               @click='selectItem(navItem)'
+                               )
+                               v-list-item-avatar(size='24', tile)
+@@ -105,6 +106,7 @@
+                               v-else-if='navItem.kind === "divider"'
+                               :key='navItem.id'
+                               :class='(navItem === current) ? "blue" : ""'
++                              :style='itemIndentStyle(navItem)'
+                               @click='selectItem(navItem)'
+                               )
+                               v-divider
+@@ -112,6 +114,7 @@
+                               v-else-if='navItem.kind === "header"'
+                               :key='navItem.id'
+                               :class='(navItem === current) ? "blue" : ""'
++                              :style='itemIndentStyle(navItem)'
+                               @click='selectItem(navItem)'
+                               ) {{navItem.label}}
+                       v-card-chin
+@@ -222,6 +225,26 @@
+                             span {{$t('navigation.delete', { kind: $t('navigation.divider') })}}
+ 
+                       v-card-text(v-if='current.kind')
++                        .d-flex.align-center.flex-wrap.mb-4.pl-8
++                          .caption.mr-3 Navigation level: {{itemDepth(current) + 1}} / 3
++                          v-btn.mr-2(
++                            small
++                            outlined
++                            color='primary'
++                            :disabled='!canIndent(current)'
++                            @click='indentItem(current)'
++                            )
++                            v-icon(left, small) mdi-format-indent-increase
++                            span Indent
++                          v-btn(
++                            small
++                            outlined
++                            color='primary'
++                            :disabled='!canOutdent(current)'
++                            @click='outdentItem(current)'
++                            )
++                            v-icon(left, small) mdi-format-indent-decrease
++                            span Outdent
+                         v-radio-group.pl-8(v-model='current.visibilityMode', mandatory, hide-details)
+                           v-radio(:label='$t("admin:navigation.visibilityMode.all")', value='all', color='primary')
+                           v-radio.mt-3(:label='$t("admin:navigation.visibilityMode.restricted")', value='restricted', color='primary')
+@@ -344,12 +367,84 @@ export default {
+     }
+   },
+   methods: {
++    itemById (id, items = this.currentTree) {
++      return _.find(items, ['id', id]) || null
++    },
++    itemDepth (item) {
++      let depth = 0
++      let current = item
++      const seen = new Set()
++      while (current && current.parentId && depth < 3) {
++        if (seen.has(current.parentId)) break
++        seen.add(current.parentId)
++        current = this.itemById(current.parentId)
++        if (!current) break
++        depth += 1
++      }
++      return depth
++    },
++    itemIndentStyle (item) {
++      return { paddingLeft: `${12 + (this.itemDepth(item) * 20)}px` }
++    },
++    isDescendant (candidate, ancestor) {
++      let current = candidate
++      const seen = new Set()
++      while (current && current.parentId) {
++        if (seen.has(current.parentId)) return true
++        seen.add(current.parentId)
++        if (current.parentId === ancestor.id) return true
++        current = this.itemById(current.parentId)
++      }
++      return false
++    },
++    previousSibling (item) {
++      const items = this.currentTree
++      const index = _.findIndex(items, ['id', item.id])
++      if (index < 0) return null
++      for (let idx = index - 1; idx >= 0; idx -= 1) {
++        if ((items[idx].parentId || null) === (item.parentId || null)) return items[idx]
++      }
++      return null
++    },
++    canIndent (item) {
++      const previous = this.previousSibling(item)
++      return Boolean(previous && this.itemDepth(item) < 2 && !this.isDescendant(previous, item))
++    },
++    canOutdent (item) {
++      return Boolean(item && item.parentId && this.itemById(item.parentId))
++    },
++    normalizeOrders () {
++      const counters = {}
++      this.currentTree.forEach(item => {
++        const key = item.parentId || '__root__'
++        const order = counters[key] || 0
++        this.$set(item, 'order', order)
++        counters[key] = order + 1
++      })
++    },
++    indentItem (item) {
++      if (!this.canIndent(item)) return
++      const previous = this.previousSibling(item)
++      this.$set(item, 'parentId', previous.id)
++      this.normalizeOrders()
++    },
++    outdentItem (item) {
++      if (!this.canOutdent(item)) return
++      const parent = this.itemById(item.parentId)
++      this.$set(item, 'parentId', parent ? (parent.parentId || null) : null)
++      this.normalizeOrders()
++    },
++    handleTreeDrag () {
++      this.normalizeOrders()
++    },
+     addItem(kind) {
+       let newItem = {
+         id: uuid(),
+         kind,
+         visibilityMode: 'all',
+-        visibilityGroups: []
++        visibilityGroups: [],
++        parentId: null,
++        order: this.currentTree.length
+       }
+       switch (kind) {
+         case 'link':
+@@ -369,7 +464,19 @@ export default {
+       this.current = newItem
+     },
+     deleteItem(item) {
+-      this.currentTree = _.pull(this.currentTree, item)
++      const removed = new Set([item.id])
++      let changed = true
++      while (changed) {
++        changed = false
++        this.currentTree.forEach(candidate => {
++          if (candidate.parentId && removed.has(candidate.parentId) && !removed.has(candidate.id)) {
++            removed.add(candidate.id)
++            changed = true
++          }
++        })
++      }
++      this.currentTree = this.currentTree.filter(candidate => !removed.has(candidate.id))
++      this.normalizeOrders()
+       this.current = {}
+     },
+     selectItem(item) {
+@@ -383,9 +490,27 @@ export default {
+     },
+     copyFromLocale () {
+       this.copyFromLocaleDialogIsShown = false
+-      this.currentTree = [...this.currentTree, ..._.get(_.find(this.trees, ['locale', this.copyFromLocaleCode]), 'items', null) || []]
++      const sourceItems = _.get(_.find(this.trees, ['locale', this.copyFromLocaleCode]), 'items', []) || []
++      const idMap = {}
++      const copiedItems = sourceItems.map(item => {
++        const newId = uuid()
++        idMap[item.id] = newId
++        return {
++          ..._.cloneDeep(item),
++          id: newId,
++          parentId: null
++        }
++      })
++      copiedItems.forEach(item => {
++        const sourceItem = sourceItems.find(source => idMap[source.id] === item.id)
++        const sourceParentId = sourceItem ? sourceItem.parentId : null
++        item.parentId = sourceParentId ? (idMap[sourceParentId] || null) : null
++      })
++      this.currentTree = [...this.currentTree, ...copiedItems]
++      this.normalizeOrders()
+     },
+     async save() {
++      this.normalizeOrders()
+       this.$store.commit(`loadingStart`, 'admin-navigation-save')
+       try {
+         const resp = await this.$apollo.mutate({
+@@ -472,6 +597,8 @@ export default {
+                 target
+                 visibilityMode
+                 visibilityGroups
++                parentId
++                order
+               }
+             }
+           }
+diff --git a/client/themes/default/components/nav-sidebar-tree.vue b/client/themes/default/components/nav-sidebar-tree.vue
+new file mode 100644
+index 0000000..4e8a844
+--- /dev/null
++++ b/client/themes/default/components/nav-sidebar-tree.vue
+@@ -0,0 +1,328 @@
++<template lang='pug'>
++  v-list.nav-tree.py-2(dense, :class='color', :dark='dark')
++    template(v-for='node in tree')
++      v-divider(v-if='node.kind === `divider`', :key='node.id')
++      .nav-tree-node(v-else, :key='node.id')
++        .nav-tree-row(
++          :class='{ "nav-tree-row-active": isActive(node), "nav-tree-row-parent-active": hasActiveDescendant(node) }'
++          :style='indentStyle'
++          )
++          v-btn.nav-tree-toggle(
++            v-if='hasVisibleChildren(node)'
++            icon
++            small
++            :aria-label='isExpanded(node) ? `Collapse ${node.label}` : `Expand ${node.label}`'
++            :aria-expanded='String(isExpanded(node))'
++            @click.stop='toggle(node)'
++            )
++            v-icon(small) {{ isExpanded(node) ? `mdi-chevron-down` : `mdi-chevron-right` }}
++          v-spacer(v-else, :style='`width: 32px; flex: 0 0 32px;`')
++          a.nav-tree-link(
++            v-if='isLink(node)'
++            :href='node.target'
++            :target='node.targetType === `externalblank` ? `_blank` : `_self`'
++            :rel='node.targetType === `externalblank` ? `noopener noreferrer` : ``'
++            :class='{ "nav-tree-link-active": isActive(node) }'
++            )
++            v-icon.nav-tree-icon(v-if='node.icon', size='18') {{ node.icon }}
++            span.nav-tree-label {{ node.label }}
++          button.nav-tree-label-button(
++            v-else
++            type='button'
++            :aria-expanded='hasVisibleChildren(node) ? String(isExpanded(node)) : undefined'
++            @click='hasVisibleChildren(node) ? toggle(node) : undefined'
++            )
++            v-icon.nav-tree-icon(v-if='node.icon', size='18') {{ node.icon }}
++            span.nav-tree-label {{ node.label }}
++        .nav-tree-children(v-if='hasVisibleChildren(node)', v-show='isExpanded(node)')
++          nav-sidebar-tree(
++            :nodes='node.children'
++            :color='color'
++            :dark='dark'
++            :path='path'
++            :level='level + 1'
++            )
++</template>
++
++<script>
++import _ from 'lodash'
++
++export default {
++  name: 'NavSidebarTree',
++  props: {
++    items: {
++      type: Array,
++      default: () => []
++    },
++    nodes: {
++      type: Array,
++      default: null
++    },
++    color: {
++      type: String,
++      default: 'primary'
++    },
++    dark: {
++      type: Boolean,
++      default: true
++    },
++    path: {
++      type: String,
++      default: ''
++    },
++    level: {
++      type: Number,
++      default: 0
++    }
++  },
++  data() {
++    return {
++      expanded: {},
++      storageKey: 'wikijs-nav-expanded-v1'
++    }
++  },
++  computed: {
++    tree() {
++      return this.nodes || this.buildTree(this.items)
++    },
++    indentStyle() {
++      return this.level > 0 ? { paddingLeft: `${this.level * 14}px` } : {}
++    },
++    currentPath() {
++      if (typeof window !== 'undefined' && window.location.pathname) {
++        return window.location.pathname
++      }
++      return this.path || '/'
++    }
++  },
++  created() {
++    this.restoreExpanded()
++    this.$nextTick(() => this.expandActiveNodes())
++  },
++  watch: {
++    path() {
++      this.$nextTick(() => this.expandActiveNodes())
++    },
++    tree: {
++      deep: true,
++      handler() {
++        this.$nextTick(() => this.expandActiveNodes())
++      }
++    }
++  },
++  methods: {
++    getId(item, index) {
++      return item.i || item.id || `nav-${this.level}-${index}`
++    },
++    buildTree(items) {
++      const source = Array.isArray(items) ? items : []
++      const nodes = source.map((item, index) => ({
++        ...item,
++        id: this.getId(item, index),
++        kind: item.k || item.kind || 'link',
++        label: item.l || item.label || '',
++        icon: item.c || item.icon || '',
++        targetType: item.y || item.targetType || 'page',
++        target: item.t || item.target || '',
++        parentId: item.p || item.parentId || null,
++        order: Number.isFinite(Number(item.o)) ? Number(item.o) : (Number.isFinite(Number(item.order)) ? Number(item.order) : index),
++        children: []
++      }))
++      const byId = _.keyBy(nodes, 'id')
++      const roots = []
++
++      // Keep backward compatibility with Wiki.js's original flat menu:
++      // a Header owns all following links until the next Header/Divider.
++      const hasExplicitParent = nodes.some(node => Boolean(node.parentId))
++      if (!hasExplicitParent) {
++        let currentSection = null
++        nodes.forEach(node => {
++          if (node.kind === 'header') {
++            currentSection = node
++            roots.push(node)
++          } else if (node.kind === 'link' && currentSection) {
++            currentSection.children.push(node)
++          } else {
++            currentSection = node.kind === 'divider' ? null : currentSection
++            roots.push(node)
++          }
++        })
++        const sortLegacy = list => {
++          list.sort((a, b) => a.order - b.order || String(a.id).localeCompare(String(b.id)))
++          list.forEach(item => sortLegacy(item.children))
++          return list
++        }
++        return sortLegacy(roots)
++      }
++
++      const hasCycle = (node, parent) => {
++        const seen = new Set([node.id])
++        let current = parent
++        while (current) {
++          if (seen.has(current.id)) return true
++          seen.add(current.id)
++          current = current.parentId ? byId[current.parentId] : null
++        }
++        return false
++      }
++
++      nodes.forEach(node => {
++        const parent = node.parentId ? byId[node.parentId] : null
++        if (parent && parent.id !== node.id && !hasCycle(node, parent)) {
++          parent.children.push(node)
++        } else {
++          roots.push(node)
++        }
++      })
++
++      // A site can contain a mixture of the original flat Header + Link format
++      // and the new explicit parentId format. Keep the old sections working for
++      // unparented items while leaving explicitly parented nodes untouched.
++      const groupedRoots = []
++      let currentSection = null
++      roots.forEach(node => {
++        if (node.parentId) {
++          currentSection = null
++          groupedRoots.push(node)
++        } else if (node.kind === 'header') {
++          currentSection = node
++          groupedRoots.push(node)
++        } else if (node.kind === 'link' && currentSection) {
++          currentSection.children.push(node)
++        } else {
++          if (node.kind === 'divider') currentSection = null
++          groupedRoots.push(node)
++        }
++      })
++
++      const sort = list => {
++        list.sort((a, b) => a.order - b.order || String(a.id).localeCompare(String(b.id)))
++        list.forEach(item => sort(item.children))
++        return list
++      }
++
++      return sort(groupedRoots)
++    },
++    isLink(node) {
++      return node.kind === 'link'
++    },
++    hasVisibleChildren(node) {
++      return this.level < 2 && node.children.length > 0
++    },
++    targetPath(target) {
++      if (!target) return ''
++      try {
++        return new URL(target, window.location.origin).pathname.replace(/\/$/, '') || '/'
++      } catch (err) {
++        return target.split('#')[0].replace(/\/$/, '') || '/'
++      }
++    },
++    isActive(node) {
++      if (!this.isLink(node)) return false
++      const target = this.targetPath(node.target)
++      const current = (this.currentPath || '/').split('#')[0].replace(/\/$/, '') || '/'
++      return target === current
++    },
++    hasActiveDescendant(node) {
++      return node.children.some(child => this.isActive(child) || this.hasActiveDescendant(child))
++    },
++    isExpanded(node) {
++      return this.expanded[node.id] !== false
++    },
++    toggle(node) {
++      this.$set(this.expanded, node.id, !this.isExpanded(node))
++      this.persistExpanded()
++    },
++    expandActiveNodes() {
++      const walk = nodes => nodes.forEach(node => {
++        if (this.hasActiveDescendant(node)) {
++          this.$set(this.expanded, node.id, true)
++        }
++        if (node.children.length > 0) walk(node.children)
++      })
++      walk(this.tree)
++      this.persistExpanded()
++    },
++    restoreExpanded() {
++      try {
++        const saved = JSON.parse(window.localStorage.getItem(this.storageKey) || '{}')
++        if (saved && typeof saved === 'object') this.expanded = saved
++      } catch (err) {
++        this.expanded = {}
++      }
++    },
++    persistExpanded() {
++      try {
++        window.localStorage.setItem(this.storageKey, JSON.stringify(this.expanded))
++      } catch (err) {
++        // Ignore storage restrictions (private browsing / disabled storage).
++      }
++    }
++  }
++}
++</script>
++
++<style lang='scss' scoped>
++.nav-tree-row {
++  display: flex;
++  align-items: center;
++  min-height: 38px;
++  padding-right: 8px;
++  border-radius: 4px;
++  transition: background-color .15s ease;
++}
++
++.nav-tree-row:hover {
++  background-color: rgba(255, 255, 255, .10);
++}
++
++.nav-tree-row-active,
++.nav-tree-row-parent-active {
++  background-color: rgba(255, 255, 255, .14);
++}
++
++.nav-tree-toggle {
++  flex: 0 0 32px;
++  margin: 0;
++}
++
++.nav-tree-link,
++.nav-tree-label-button {
++  display: flex;
++  align-items: center;
++  min-height: 38px;
++  flex: 1 1 auto;
++  min-width: 0;
++  color: inherit;
++  text-decoration: none;
++  text-align: left;
++  background: transparent;
++  border: 0;
++  cursor: pointer;
++  font: inherit;
++}
++
++.nav-tree-link:hover,
++.nav-tree-label-button:hover {
++  color: inherit;
++}
++
++.nav-tree-link-active {
++  font-weight: 600;
++}
++
++.nav-tree-icon {
++  flex: 0 0 24px;
++  margin-right: 6px;
++}
++
++.nav-tree-label {
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.nav-tree-children {
++  margin-left: 16px;
++}
++</style>
+diff --git a/client/themes/default/components/nav-sidebar.vue b/client/themes/default/components/nav-sidebar.vue
+index fc2619e..35bfb9c 100644
+--- a/client/themes/default/components/nav-sidebar.vue
++++ b/client/themes/default/components/nav-sidebar.vue
+@@ -29,20 +29,13 @@
+         .body-2.text-none {{$t('common:sidebar.mainMenu')}}
+     v-divider
+     //-> Custom Navigation
+-    v-list.py-2(v-if='currentMode === `custom`', dense, :class='color', :dark='dark')
+-      template(v-for='item of items')
+-        v-list-item(
+-          v-if='item.k === `link`'
+-          :href='item.t'
+-          :target='item.y === `externalblank` ? `_blank` : `_self`'
+-          :rel='item.y === `externalblank` ? `noopener` : ``'
+-          )
+-          v-list-item-avatar(size='24', tile)
+-            v-icon(v-if='item.c.match(/fa[a-z] fa-/)', size='19') {{ item.c }}
+-            v-icon(v-else) {{ item.c }}
+-          v-list-item-title {{ item.l }}
+-        v-divider.my-2(v-else-if='item.k === `divider`')
+-        v-subheader.pl-4(v-else-if='item.k === `header`') {{ item.l }}
++    nav-sidebar-tree(
++      v-if='currentMode === `custom`'
++      :items='items'
++      :color='color'
++      :dark='dark'
++      :path='path'
++      )
+     //-> Browse
+     v-list.py-2(v-else-if='currentMode === `browse`', dense, :class='color', :dark='dark')
+       template(v-if='currentParent.id > 0')
+@@ -71,10 +64,14 @@
+ import _ from 'lodash'
+ import gql from 'graphql-tag'
+ import { get } from 'vuex-pathify'
++import NavSidebarTree from './nav-sidebar-tree.vue'
+ 
+ /* global siteLangs */
+ 
+ export default {
++  components: {
++    NavSidebarTree
++  },
+   props: {
+     color: {
+       type: String,
+diff --git a/server/controllers/common.js b/server/controllers/common.js
+index dec6fa3..c9a3e66 100644
+--- a/server/controllers/common.js
++++ b/server/controllers/common.js
+@@ -479,14 +479,15 @@ router.get('/*', async (req, res, next) => {
+         }
+ 
+         // -> Build sidebar navigation
+-        let sdi = 1
+-        const sidebar = (await WIKI.models.navigation.getTree({ cache: true, locale: pageArgs.locale, groups: req.user.groups })).map(n => ({
+-          i: `sdi-${sdi++}`,
++        const sidebar = (await WIKI.models.navigation.getTree({ cache: true, locale: pageArgs.locale, groups: req.user.groups })).map((n, index) => ({
++          i: n.id || `sdi-${index + 1}`,
+           k: n.kind,
+           l: n.label,
+           c: n.icon,
+           y: n.targetType,
+-          t: n.target
++          t: n.target,
++          p: n.parentId || null,
++          o: Number.isFinite(Number(n.order)) ? Number(n.order) : index
+         }))
+ 
+         // -> Build theme code injection
+diff --git a/server/graph/resolvers/navigation.js b/server/graph/resolvers/navigation.js
+index 73988c1..2ce61c9 100644
+--- a/server/graph/resolvers/navigation.js
++++ b/server/graph/resolvers/navigation.js
+@@ -20,6 +20,7 @@ module.exports = {
+   NavigationMutation: {
+     async updateTree (obj, args, context) {
+       try {
++        WIKI.models.navigation.validateTree(args.tree)
+         await WIKI.models.navigation.query().patch({
+           config: args.tree
+         }).where('key', 'site')
+diff --git a/server/graph/schemas/navigation.graphql b/server/graph/schemas/navigation.graphql
+index 26ef9a9..e9d9cdc 100644
+--- a/server/graph/schemas/navigation.graphql
++++ b/server/graph/schemas/navigation.graphql
+@@ -55,6 +55,8 @@ type NavigationItem {
+   target: String
+   visibilityMode: String
+   visibilityGroups: [Int]
++  parentId: String
++  order: Int
+ }
+ 
+ input NavigationItemInput {
+@@ -66,6 +68,8 @@ input NavigationItemInput {
+   target: String
+   visibilityMode: String
+   visibilityGroups: [Int]
++  parentId: String
++  order: Int
+ }
+ 
+ type NavigationConfig {
+diff --git a/server/models/navigation.js b/server/models/navigation.js
+index 41bc05c..f108806 100644
+--- a/server/models/navigation.js
++++ b/server/models/navigation.js
+@@ -60,8 +60,76 @@ module.exports = class Navigation extends Model {
+   }
+ 
+   static getAuthorizedItems(tree = [], groups = []) {
+-    return _.filter(tree, leaf => {
+-      return leaf.visibilityMode === 'all' || _.intersection(leaf.visibilityGroups, groups).length > 0
++    const locales = Array.isArray(tree) ? tree : []
++    const filterItems = items => {
++      const source = Array.isArray(items) ? items : []
++      const allowed = new Set(source.filter(item => {
++        return item.visibilityMode === 'all' || _.intersection(item.visibilityGroups || [], groups).length > 0
++      }).map(item => item.id))
++
++      return source.filter(item => {
++        if (!allowed.has(item.id)) return false
++        let parentId = item.parentId || null
++        const seen = new Set()
++        while (parentId) {
++          if (seen.has(parentId) || !allowed.has(parentId)) return false
++          seen.add(parentId)
++          const parent = _.find(source, ['id', parentId])
++          parentId = parent ? (parent.parentId || null) : null
++        }
++        return true
++      })
++    }
++
++    if (locales.length === 0 || !Object.prototype.hasOwnProperty.call(locales[0], 'items')) {
++      return filterItems(locales)
++    }
++
++    return locales.map(localeTree => ({
++      ...localeTree,
++      items: filterItems(localeTree.items)
++    }))
++  }
++
++  static validateTree(tree = []) {
++    const locales = Array.isArray(tree) ? tree : []
++    locales.forEach(localeTree => {
++      const items = Array.isArray(localeTree.items) ? localeTree.items : []
++      const byId = new Map()
++
++      items.forEach(item => {
++        if (!item || !item.id) {
++          throw new Error(`Navigation item in locale ${localeTree.locale || 'unknown'} is missing an id.`)
++        }
++        const id = String(item.id)
++        if (byId.has(id)) {
++          throw new Error(`Navigation item id ${id} is duplicated in locale ${localeTree.locale || 'unknown'}.`)
++        }
++        byId.set(id, item)
++      })
++
++      items.forEach(item => {
++        let depth = 1
++        let parentId = item.parentId || null
++        const seen = new Set([String(item.id)])
++        while (parentId) {
++          parentId = String(parentId)
++          if (seen.has(parentId)) {
++            throw new Error(`Navigation item ${item.id} contains a parent cycle.`)
++          }
++          const parent = byId.get(parentId)
++          if (!parent) {
++            throw new Error(`Navigation item ${item.id} references missing parent ${parentId}.`)
++          }
++          seen.add(parentId)
++          depth += 1
++          if (depth > 3) {
++            throw new Error(`Navigation item ${item.id} exceeds the maximum depth of 3.`)
++          }
++          parentId = parent.parentId || null
++        }
++      })
+     })
++    return true
+   }
+ }

@@ -1,0 +1,35 @@
+name: Validate navigation overlay
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      WIKIJS_VERSION: v2.5.314
+      WIKIJS_COMMIT: 6f042e97cc2d3acda6b6ff611de8e0faacce91c1
+    steps:
+      - name: Checkout overlay
+        uses: actions/checkout@v4
+
+      - name: Prepare upstream Wiki.js
+        run: WIKI_COMMIT="${WIKIJS_COMMIT}" bash scripts/prepare-upstream.sh "${WIKIJS_VERSION}"
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        working-directory: .build/wikijs
+        run: yarn install --frozen-lockfile --non-interactive
+
+      - name: Lint and build Wiki.js
+        working-directory: .build/wikijs
+        run: |
+          yarn test
+          yarn build

@@ -1,0 +1,4 @@
+This project contains an overlay derived from Wiki.js, which is licensed under AGPL-3.0.
+Wiki.js: https://github.com/Requarks/wiki
+
+The upstream source tag used by the first release is v2.5.314.
