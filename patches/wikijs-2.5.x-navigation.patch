@@ -22,10 +22,10 @@ index 1d0762f..ce8e2c6 100644
      { path: '/pages/visualize', component: () => import(/* webpackChunkName: "admin" */ './admin/admin-pages-visualize.vue') },
 diff --git a/client/components/admin/admin-navigation-tree-node.vue b/client/components/admin/admin-navigation-tree-node.vue
 new file mode 100644
-index 0000000..e2a62c3
+index 0000000..80ce662
 --- /dev/null
 +++ b/client/components/admin/admin-navigation-tree-node.vue
-@@ -0,0 +1,253 @@
+@@ -0,0 +1,261 @@
 +<template lang='pug'>
 +  .nav-tree-branch(:class='`nav-tree-level-${level + 1}`')
 +    draggable.nav-tree-list(
@@ -48,13 +48,15 @@ index 0000000..e2a62c3
 +            v-btn.nav-tree-handle(icon, small, :aria-label='`拖动${node.label || `未命名节点`}`')
 +              v-icon(small) mdi-drag-vertical
 +            v-btn.nav-tree-expand(
++              v-if='hasChildren(node)'
 +              icon
 +              small
 +              :aria-label='isExpanded(node) ? `收起${node.label || `未命名节点`}` : `展开${node.label || `未命名节点`}`'
 +              @click.stop='toggle(node)'
 +              )
 +              v-icon(small) {{ isExpanded(node) ? `mdi-chevron-down` : `mdi-chevron-right` }}
-+            v-icon.nav-tree-kind(small) {{ node.icon || kindIcon(node) }}
++            v-spacer(v-else, style='width: 32px; flex: 0 0 32px;')
++            v-icon.nav-tree-kind(small) {{ nodeIcon(node) }}
 +            .nav-tree-label {{node.label || '未命名节点'}}
 +            v-chip.ml-2(x-small, outlined) {{levelLabel(level)}}
 +            v-chip.ml-2.nav-tree-kind-chip(x-small, :color='kindColor(node)', outlined) {{kindLabel(node)}}
@@ -147,6 +149,12 @@ index 0000000..e2a62c3
 +    this.$root.$off('navigation-tree-collapse-all', this.collapseAll)
 +  },
 +  methods: {
++    hasChildren(node) {
++      return Boolean(node && node.children && node.children.length > 0)
++    },
++    nodeIcon(node) {
++      return node.icon && node.icon !== 'mdi-chevron-right' ? node.icon : this.kindIcon(node)
++    },
 +    expandBranches() {
 +      this.nodes.forEach(node => {
 +        if (node.children && node.children.length > 0 && typeof this.expanded[node.id] === 'undefined') {
@@ -855,10 +863,10 @@ index 0000000..1d713a9
 \ No newline at end of file
 diff --git a/client/themes/default/components/nav-sidebar-tree.vue b/client/themes/default/components/nav-sidebar-tree.vue
 new file mode 100644
-index 0000000..4e8a844
+index 0000000..286da67
 --- /dev/null
 +++ b/client/themes/default/components/nav-sidebar-tree.vue
-@@ -0,0 +1,328 @@
+@@ -0,0 +1,332 @@
 +<template lang='pug'>
 +  v-list.nav-tree.py-2(dense, :class='color', :dark='dark')
 +    template(v-for='node in tree')
@@ -885,7 +893,7 @@ index 0000000..4e8a844
 +            :rel='node.targetType === `externalblank` ? `noopener noreferrer` : ``'
 +            :class='{ "nav-tree-link-active": isActive(node) }'
 +            )
-+            v-icon.nav-tree-icon(v-if='node.icon', size='18') {{ node.icon }}
++            v-icon.nav-tree-icon(v-if='nodeIcon(node)', size='18') {{ nodeIcon(node) }}
 +            span.nav-tree-label {{ node.label }}
 +          button.nav-tree-label-button(
 +            v-else
@@ -893,7 +901,7 @@ index 0000000..4e8a844
 +            :aria-expanded='hasVisibleChildren(node) ? String(isExpanded(node)) : undefined'
 +            @click='hasVisibleChildren(node) ? toggle(node) : undefined'
 +            )
-+            v-icon.nav-tree-icon(v-if='node.icon', size='18') {{ node.icon }}
++            v-icon.nav-tree-icon(v-if='nodeIcon(node)', size='18') {{ nodeIcon(node) }}
 +            span.nav-tree-label {{ node.label }}
 +        .nav-tree-children(v-if='hasVisibleChildren(node)', v-show='isExpanded(node)')
 +          nav-sidebar-tree(
@@ -1063,6 +1071,10 @@ index 0000000..4e8a844
 +      }
 +
 +      return sort(groupedRoots)
++    },
++    nodeIcon(node) {
++      if (node.icon && node.icon !== 'mdi-chevron-right') return node.icon
++      return node.kind === 'link' ? 'mdi-link' : ''
 +    },
 +    isLink(node) {
 +      return node.kind === 'link'
