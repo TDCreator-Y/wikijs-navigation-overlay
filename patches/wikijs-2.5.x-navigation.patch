@@ -282,7 +282,7 @@ index 0000000..e2a62c3
 \ No newline at end of file
 diff --git a/client/components/admin/admin-navigation-tree.vue b/client/components/admin/admin-navigation-tree.vue
 new file mode 100644
-index 0000000..3f9c8ee
+index 0000000..1d713a9
 --- /dev/null
 +++ b/client/components/admin/admin-navigation-tree.vue
 @@ -0,0 +1,566 @@
@@ -784,7 +784,7 @@ index 0000000..3f9c8ee
 +      this.$store.commit('loadingStart', 'admin-navigation-tree-save')
 +      try {
 +        const resp = await this.$apollo.mutate({
-+          mutation: gql('mutation ($tree: [NavigationTreeInput]!) { navigation { updateTree(tree: $tree) { responseResult { succeeded message } } } }'),
++          mutation: gql`mutation ($tree: [NavigationTreeInput]!) { navigation { updateTree(tree: $tree) { responseResult { succeeded message } } } }`,
 +          variables: { tree: payload }
 +        })
 +        const result = _.get(resp, 'data.navigation.updateTree.responseResult', {})
@@ -809,7 +809,7 @@ index 0000000..3f9c8ee
 +  },
 +  apollo: {
 +    config: {
-+      query: gql('query { navigation { config { mode } } }'),
++      query: gql`query { navigation { config { mode } } }`,
 +      fetchPolicy: 'network-only',
 +      update: data => _.cloneDeep(data.navigation.config),
 +      watchLoading(isLoading) {
@@ -817,7 +817,7 @@ index 0000000..3f9c8ee
 +      }
 +    },
 +    trees: {
-+      query: gql('query { navigation { tree { locale items { id kind label icon targetType target visibilityMode visibilityGroups parentId order } } } }'),
++      query: gql`query { navigation { tree { locale items { id kind label icon targetType target visibilityMode visibilityGroups parentId order } } } }`,
 +      fetchPolicy: 'network-only',
 +      update: data => _.cloneDeep(data.navigation.tree),
 +      watchLoading(isLoading) {
@@ -833,7 +833,7 @@ index 0000000..3f9c8ee
 +      }
 +    },
 +    allLocales: {
-+      query: gql('query { localization { locales { code name nativeName } } }'),
++      query: gql`query { localization { locales { code name nativeName } } }`,
 +      fetchPolicy: 'network-only',
 +      update: data => data.localization.locales,
 +      watchLoading(isLoading) {
