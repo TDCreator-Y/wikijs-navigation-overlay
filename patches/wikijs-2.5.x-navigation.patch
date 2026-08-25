@@ -22,10 +22,10 @@ index 1d0762f..ce8e2c6 100644
      { path: '/pages/visualize', component: () => import(/* webpackChunkName: "admin" */ './admin/admin-pages-visualize.vue') },
 diff --git a/client/components/admin/admin-navigation-tree-node.vue b/client/components/admin/admin-navigation-tree-node.vue
 new file mode 100644
-index 0000000..80ce662
+index 0000000..4ccdcdb
 --- /dev/null
 +++ b/client/components/admin/admin-navigation-tree-node.vue
-@@ -0,0 +1,261 @@
+@@ -0,0 +1,267 @@
 +<template lang='pug'>
 +  .nav-tree-branch(:class='`nav-tree-level-${level + 1}`')
 +    draggable.nav-tree-list(
@@ -55,7 +55,7 @@ index 0000000..80ce662
 +              @click.stop='toggle(node)'
 +              )
 +              v-icon(small) {{ isExpanded(node) ? `mdi-chevron-down` : `mdi-chevron-right` }}
-+            v-spacer(v-else, style='width: 32px; flex: 0 0 32px;')
++            .nav-tree-expand-spacer(v-else)
 +            v-icon.nav-tree-kind(small) {{ nodeIcon(node) }}
 +            .nav-tree-label {{node.label || '未命名节点'}}
 +            v-chip.ml-2(x-small, outlined) {{levelLabel(level)}}
@@ -247,6 +247,12 @@ index 0000000..80ce662
 +
 +.nav-tree-expand {
 +  flex: 0 0 32px;
++}
++
++.nav-tree-expand-spacer {
++  flex: 0 0 32px;
++  width: 32px;
++  height: 32px;
 +}
 +
 +.nav-tree-kind {
@@ -863,10 +869,10 @@ index 0000000..1d713a9
 \ No newline at end of file
 diff --git a/client/themes/default/components/nav-sidebar-tree.vue b/client/themes/default/components/nav-sidebar-tree.vue
 new file mode 100644
-index 0000000..286da67
+index 0000000..9c834aa
 --- /dev/null
 +++ b/client/themes/default/components/nav-sidebar-tree.vue
-@@ -0,0 +1,332 @@
+@@ -0,0 +1,338 @@
 +<template lang='pug'>
 +  v-list.nav-tree.py-2(dense, :class='color', :dark='dark')
 +    template(v-for='node in tree')
@@ -885,7 +891,7 @@ index 0000000..286da67
 +            @click.stop='toggle(node)'
 +            )
 +            v-icon(small) {{ isExpanded(node) ? `mdi-chevron-down` : `mdi-chevron-right` }}
-+          v-spacer(v-else, :style='`width: 32px; flex: 0 0 32px;`')
++          .nav-tree-expand-spacer(v-else)
 +          a.nav-tree-link(
 +            v-if='isLink(node)'
 +            :href='node.target'
@@ -1157,6 +1163,12 @@ index 0000000..286da67
 +.nav-tree-toggle {
 +  flex: 0 0 32px;
 +  margin: 0;
++}
++
++.nav-tree-expand-spacer {
++  flex: 0 0 32px;
++  width: 32px;
++  height: 32px;
 +}
 +
 +.nav-tree-link,
