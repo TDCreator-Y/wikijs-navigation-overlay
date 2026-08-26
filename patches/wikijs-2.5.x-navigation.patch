@@ -22,10 +22,10 @@ index 1d0762f..ce8e2c6 100644
      { path: '/pages/visualize', component: () => import(/* webpackChunkName: "admin" */ './admin/admin-pages-visualize.vue') },
 diff --git a/client/components/admin/admin-navigation-tree-node.vue b/client/components/admin/admin-navigation-tree-node.vue
 new file mode 100644
-index 0000000..9ea7f86
+index 0000000..db89bf1
 --- /dev/null
 +++ b/client/components/admin/admin-navigation-tree-node.vue
-@@ -0,0 +1,253 @@
+@@ -0,0 +1,266 @@
 +<template lang='pug'>
 +  .nav-tree-branch(:class='`nav-tree-level-${level + 1}`')
 +    draggable.nav-tree-list(
@@ -56,7 +56,7 @@ index 0000000..9ea7f86
 +              )
 +              v-icon(small) {{ isExpanded(node) ? `mdi-chevron-down` : `mdi-chevron-right` }}
 +            .nav-tree-expand-spacer(v-else)
-+            .nav-tree-label {{node.label || '未命名节点'}}
++            .nav-tree-label(:class='`nav-tree-label-level-${level + 1}`') {{node.label || '未命名节点'}}
 +            v-chip.ml-2(x-small, outlined) {{levelLabel(level)}}
 +            v-chip.ml-2.nav-tree-kind-chip(x-small, :color='kindColor(node)', outlined) {{kindLabel(node)}}
 +            v-spacer
@@ -247,10 +247,25 @@ index 0000000..9ea7f86
 +}
 +
 +.nav-tree-label {
++  flex: 0 0 280px;
++  width: 280px;
++  min-width: 0;
 +  overflow: hidden;
-+  max-width: 420px;
++  text-align: right;
 +  text-overflow: ellipsis;
 +  white-space: nowrap;
++}
++
++.nav-tree-label-level-1 {
++  font-weight: 700;
++}
++
++.nav-tree-label-level-2 {
++  font-weight: 500;
++}
++
++.nav-tree-label-level-3 {
++  font-weight: 400;
 +}
 +
 +.nav-tree-kind-chip {
@@ -259,9 +274,7 @@ index 0000000..9ea7f86
 +}
 +
 +.nav-tree-children {
-+  margin: 4px 0 4px 28px;
-+  padding-left: 12px;
-+  border-left: 2px solid rgba(0, 150, 136, .22);
++  margin: 4px 0;
 +}
 +
 +.nav-tree-empty {
@@ -855,10 +868,10 @@ index 0000000..1d713a9
 \ No newline at end of file
 diff --git a/client/themes/default/components/nav-sidebar-tree.vue b/client/themes/default/components/nav-sidebar-tree.vue
 new file mode 100644
-index 0000000..8576650
+index 0000000..91b5045
 --- /dev/null
 +++ b/client/themes/default/components/nav-sidebar-tree.vue
-@@ -0,0 +1,327 @@
+@@ -0,0 +1,339 @@
 +<template lang='pug'>
 +  v-list.nav-tree.py-2(dense, :class='color', :dark='dark')
 +    template(v-for='node in tree')
@@ -866,7 +879,6 @@ index 0000000..8576650
 +      .nav-tree-node(v-else, :key='node.id')
 +        .nav-tree-row(
 +          :class='{ "nav-tree-row-active": isActive(node), "nav-tree-row-parent-active": hasActiveDescendant(node) }'
-+          :style='indentStyle'
 +          )
 +          v-btn.nav-tree-toggle(
 +            v-if='hasVisibleChildren(node)'
@@ -885,14 +897,14 @@ index 0000000..8576650
 +            :rel='node.targetType === `externalblank` ? `noopener noreferrer` : ``'
 +            :class='{ "nav-tree-link-active": isActive(node) }'
 +            )
-+            span.nav-tree-label {{ node.label }}
++            span.nav-tree-label(:class='`nav-tree-label-level-${level + 1}`') {{ node.label }}
 +          button.nav-tree-label-button(
 +            v-else
 +            type='button'
 +            :aria-expanded='hasVisibleChildren(node) ? String(isExpanded(node)) : undefined'
 +            @click='hasVisibleChildren(node) ? toggle(node) : undefined'
 +            )
-+            span.nav-tree-label {{ node.label }}
++            span.nav-tree-label(:class='`nav-tree-label-level-${level + 1}`') {{ node.label }}
 +        .nav-tree-children(v-if='hasVisibleChildren(node)', v-show='isExpanded(node)')
 +          nav-sidebar-tree(
 +            :nodes='node.children'
@@ -943,9 +955,6 @@ index 0000000..8576650
 +  computed: {
 +    tree() {
 +      return this.nodes || this.buildTree(this.items)
-+    },
-+    indentStyle() {
-+      return this.level > 0 ? { paddingLeft: `${this.level * 14}px` } : {}
 +    },
 +    currentPath() {
 +      if (typeof window !== 'undefined' && window.location.pathname) {
@@ -1177,13 +1186,29 @@ index 0000000..8576650
 +}
 +
 +.nav-tree-label {
++  display: block;
++  flex: 1 1 auto;
++  min-width: 0;
 +  overflow: hidden;
++  text-align: right;
 +  text-overflow: ellipsis;
 +  white-space: nowrap;
 +}
 +
++.nav-tree-label-level-1 {
++  font-weight: 700;
++}
++
++.nav-tree-label-level-2 {
++  font-weight: 500;
++}
++
++.nav-tree-label-level-3 {
++  font-weight: 400;
++}
++
 +.nav-tree-children {
-+  margin-left: 16px;
++  margin-left: 0;
 +}
 +</style>
 diff --git a/client/themes/default/components/nav-sidebar.vue b/client/themes/default/components/nav-sidebar.vue
