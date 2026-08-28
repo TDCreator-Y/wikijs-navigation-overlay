@@ -1259,7 +1259,7 @@ index fc2619e..35bfb9c 100644
      color: {
        type: String,
 diff --git a/client/themes/default/components/page.vue b/client/themes/default/components/page.vue
-index 822e739..a469b66 100644
+index 822e739..0fa292c 100644
 --- a/client/themes/default/components/page.vue
 +++ b/client/themes/default/components/page.vue
 @@ -162,26 +162,6 @@
@@ -1321,6 +1321,90 @@ index 822e739..a469b66 100644
            v-flex.page-col-content(
              xs12
              :lg9='tocPosition !== `off`'
+@@ -364,6 +319,7 @@ import Prism from 'prismjs'
+ import mermaid from 'mermaid'
+ import { get, sync } from 'vuex-pathify'
+ import _ from 'lodash'
++import gql from 'graphql-tag'
+ import ClipboardJS from 'clipboard'
+ import Vue from 'vue'
+ 
+@@ -523,7 +479,8 @@ export default {
+           }
+         }
+       },
+-      winWidth: 0
++      winWidth: 0,
++      breadcrumbPages: []
+     }
+   },
+   computed: {
+@@ -539,15 +496,23 @@ export default {
+ 
+       }
+     },
+-    breadcrumbs() {
++    breadcrumbs () {
++      const localePrefix = this.locales.length > 0 ? `/${this.locale}` : ''
++      let currentPath = ''
++
+       return [{ path: '/', name: 'Home' }].concat(
+-        _.reduce(this.path.split('/'), (result, value) => {
+-          result.push({
+-            path: _.get(_.last(result), 'path', this.locales.length > 0 ? `/${this.locale}` : '') + `/${value}`,
+-            name: value
++        this.path.split('/').filter(Boolean).map(segment => {
++          currentPath += `/${segment}`
++          const normalizedPath = currentPath.slice(1)
++          const page = _.find(this.breadcrumbPages, item => {
++            return String(item.path || '').replace(/^\/+|\/+$/g, '') === normalizedPath
+           })
+-          return result
+-        }, []))
++
++          return {
++            path: `${localePrefix}${currentPath}`,
++            name: page && page.title ? page.title : (normalizedPath === this.path ? this.title : segment)
++          }
++        }))
+     },
+     pageUrl () { return window.location.href },
+     upBtnPosition () {
+@@ -651,6 +616,34 @@ export default {
+       window.boot.notify('page-ready')
+     })
+   },
++  apollo: {
++    breadcrumbPages: {
++      query: gql`
++        query ($path: String, $locale: String!) {
++          pages {
++            tree(path: $path, mode: ALL, locale: $locale, includeAncestors: true) {
++              path
++              title
++            }
++          }
++        }
++      `,
++      variables () {
++        return {
++          path: this.path,
++          locale: this.locale
++        }
++      },
++      skip () {
++        return this.path === 'home'
++      },
++      fetchPolicy: 'cache-first',
++      update: data => _.get(data, 'pages.tree', []),
++      error () {
++        this.breadcrumbPages = []
++      }
++    }
++  },
+   methods: {
+     goHome () {
+       if (this.locales && this.locales.length > 0) {
 diff --git a/server/controllers/common.js b/server/controllers/common.js
 index dec6fa3..c9a3e66 100644
 --- a/server/controllers/common.js
