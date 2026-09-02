@@ -868,10 +868,10 @@ index 0000000..1d713a9
 \ No newline at end of file
 diff --git a/client/themes/default/components/nav-sidebar-tree.vue b/client/themes/default/components/nav-sidebar-tree.vue
 new file mode 100644
-index 0000000..ab8350d
+index 0000000..6d25466
 --- /dev/null
 +++ b/client/themes/default/components/nav-sidebar-tree.vue
-@@ -0,0 +1,339 @@
+@@ -0,0 +1,358 @@
 +<template lang='pug'>
 +  v-list.nav-tree.py-2(dense, :class='color', :dark='dark')
 +    template(v-for='node in tree')
@@ -896,15 +896,16 @@ index 0000000..ab8350d
 +            :target='node.targetType === `externalblank` ? `_blank` : `_self`'
 +            :rel='node.targetType === `externalblank` ? `noopener noreferrer` : ``'
 +            :class='{ "nav-tree-link-active": isActive(node) }'
++            @click='handleLinkClick($event, node)'
 +            )
-+            span.nav-tree-label(:class='`nav-tree-label-level-${level + 1}`') {{ node.label }}
++            span.nav-tree-label(:class='`nav-tree-label-level-${level + 1}`', :title='node.label') {{ node.label }}
 +          button.nav-tree-label-button(
 +            v-else
 +            type='button'
 +            :aria-expanded='hasVisibleChildren(node) ? String(isExpanded(node)) : undefined'
 +            @click='hasVisibleChildren(node) ? toggle(node) : undefined'
 +            )
-+            span.nav-tree-label(:class='`nav-tree-label-level-${level + 1}`') {{ node.label }}
++            span.nav-tree-label(:class='`nav-tree-label-level-${level + 1}`', :title='node.label') {{ node.label }}
 +        .nav-tree-children(v-if='hasVisibleChildren(node)', v-show='isExpanded(node)')
 +          nav-sidebar-tree(
 +            :nodes='node.children'
@@ -1073,6 +1074,24 @@ index 0000000..ab8350d
 +    },
 +    isLink(node) {
 +      return node.kind === 'link'
++    },
++    handleLinkClick (event, node) {
++      if (this.hasVisibleChildren(node) && !this.isExpanded(node)) {
++        event.preventDefault()
++        this.toggle(node)
++        return
++      }
++      this.rememberNavigationScroll()
++    },
++    rememberNavigationScroll () {
++      const root = document.querySelector('.nav-drawer-scroll')
++      if (!root) return
++      const scrollElement = root.querySelector('.__view') || root.querySelector('.__panel') || root
++      try {
++        window.sessionStorage.setItem('wikijs-nav-scroll-v1', String(scrollElement.scrollTop || 0))
++      } catch (err) {
++        // Ignore storage restrictions (private browsing / disabled storage).
++      }
 +    },
 +    hasVisibleChildren(node) {
 +      return this.level < 2 && node.children.length > 0
@@ -1259,10 +1278,57 @@ index fc2619e..35bfb9c 100644
      color: {
        type: String,
 diff --git a/client/themes/default/components/page.vue b/client/themes/default/components/page.vue
-index 822e739..0fa292c 100644
+index 822e739..df4f642 100644
 --- a/client/themes/default/components/page.vue
 +++ b/client/themes/default/components/page.vue
-@@ -162,26 +162,6 @@
+@@ -1,9 +1,23 @@
+ <template lang="pug">
+   v-app(v-scroll='upBtnScroll', :dark='$vuetify.theme.dark', :class='$vuetify.rtl ? `is-rtl` : `is-ltr`')
+     nav-header(v-if='!printView')
++      template(v-slot:actions, v-if='navMode !== `NONE` && $vuetify.breakpoint.mdAndUp')
++        v-tooltip(bottom)
++          template(v-slot:activator='{ on }')
++            v-btn(
++              icon
++              tile
++              height='64'
++              v-on='on'
++              @click='toggleNavDrawer'
++              :aria-label='navShown ? `Collapse navigation` : `Expand navigation`'
++              )
++              v-icon {{ navShown ? `mdi-menu-open` : `mdi-menu` }}
++          span {{ navShown ? `收起导航栏` : `展开导航栏` }}
+     v-navigation-drawer(
+       v-if='navMode !== `NONE` && !printView'
+-      :class='$vuetify.theme.dark ? `grey darken-4-d4` : `primary`'
++      :class='[$vuetify.theme.dark ? `grey darken-4-d4` : `primary`, `nav-drawer`]'
++      width='320'
+       dark
+       app
+       clipped
+@@ -12,7 +26,11 @@
+       v-model='navShown'
+       :right='$vuetify.rtl'
+       )
+-      vue-scroll(:ops='scrollStyle')
++      vue-scroll.nav-drawer-scroll(
++        :ops='scrollStyle'
++        @wheel.native.stop
++        @touchmove.native.stop
++        )
+         nav-sidebar(:color='$vuetify.theme.dark ? `grey darken-4-d4` : `primary`', :items='sidebarDecoded', :nav-mode='navMode')
+ 
+     v-fab-transition(v-if='navMode !== `NONE`')
+@@ -24,7 +42,7 @@
+         :right='$vuetify.rtl'
+         :left='!$vuetify.rtl'
+         small
+-        @click='navShown = !navShown'
++        @click='toggleNavDrawer'
+         v-if='$vuetify.breakpoint.mdAndDown'
+         v-show='!navShown'
+         )
+@@ -162,26 +180,6 @@
                          v-icon(:color='$vuetify.theme.dark ? `blue-grey lighten-1` : `blue-grey darken-2`', dense) mdi-comment-plus
                      span {{$t('common:comments.newComment')}}
  
@@ -1289,7 +1355,7 @@ index 822e739..0fa292c 100644
              //- v-card.mb-5
              //-   .pa-5
              //-     .overline.pb-2.yellow--text(:class='$vuetify.theme.dark ? `text--darken-3` : `text--darken-4`') Rating
-@@ -195,31 +175,6 @@
+@@ -195,31 +193,6 @@
              //-       )
              //-       .caption.grey--text 5 votes
  
@@ -1321,7 +1387,7 @@ index 822e739..0fa292c 100644
            v-flex.page-col-content(
              xs12
              :lg9='tocPosition !== `off`'
-@@ -364,6 +319,7 @@ import Prism from 'prismjs'
+@@ -364,6 +337,7 @@ import Prism from 'prismjs'
  import mermaid from 'mermaid'
  import { get, sync } from 'vuex-pathify'
  import _ from 'lodash'
@@ -1329,17 +1395,18 @@ index 822e739..0fa292c 100644
  import ClipboardJS from 'clipboard'
  import Vue from 'vue'
  
-@@ -523,7 +479,8 @@ export default {
+@@ -523,7 +497,9 @@ export default {
            }
          }
        },
 -      winWidth: 0
 +      winWidth: 0,
++      navDrawerCollapsed: false,
 +      breadcrumbPages: []
      }
    },
    computed: {
-@@ -539,15 +496,23 @@ export default {
+@@ -539,15 +515,23 @@ export default {
  
        }
      },
@@ -1370,7 +1437,22 @@ index 822e739..0fa292c 100644
      },
      pageUrl () { return window.location.href },
      upBtnPosition () {
-@@ -651,6 +616,34 @@ export default {
+@@ -606,6 +590,9 @@ export default {
+     this.$store.set('page/mode', 'view')
+   },
+   mounted () {
++    this.restoreNavDrawerState()
++    window.addEventListener('beforeunload', this.rememberNavScrollPosition)
++
+     if (this.$vuetify.theme.dark) {
+       this.scrollStyle.bar.background = '#424242'
+     }
+@@ -648,10 +635,95 @@ export default {
+         }
+       })
+ 
++      this.restoreNavScrollPosition()
++
        window.boot.notify('page-ready')
      })
    },
@@ -1403,8 +1485,97 @@ index 822e739..0fa292c 100644
 +    }
 +  },
    methods: {
++    toggleNavDrawer () {
++      this.navShown = !this.navShown
++      if (this.$vuetify.breakpoint.mdAndUp) {
++        this.navDrawerCollapsed = !this.navShown
++        this.persistNavDrawerState()
++      }
++    },
++    restoreNavDrawerState () {
++      try {
++        const saved = window.localStorage.getItem('wikijs-nav-drawer-collapsed-v1')
++        if (saved !== null) this.navDrawerCollapsed = saved === 'true'
++      } catch (err) {
++        this.navDrawerCollapsed = false
++      }
++    },
++    persistNavDrawerState () {
++      try {
++        window.localStorage.setItem('wikijs-nav-drawer-collapsed-v1', String(this.navDrawerCollapsed))
++      } catch (err) {
++        // Ignore storage restrictions (private browsing / disabled storage).
++      }
++    },
++    getNavScrollElement () {
++      const root = document.querySelector('.nav-drawer-scroll')
++      if (!root) return null
++      return root.querySelector('.__view') || root.querySelector('.__panel') || root
++    },
++    rememberNavScrollPosition () {
++      const scrollElement = this.getNavScrollElement()
++      if (!scrollElement) return
++      try {
++        window.sessionStorage.setItem('wikijs-nav-scroll-v1', String(scrollElement.scrollTop || 0))
++      } catch (err) {
++        // Ignore storage restrictions (private browsing / disabled storage).
++      }
++    },
++    restoreNavScrollPosition () {
++      let saved = null
++      try {
++        saved = window.sessionStorage.getItem('wikijs-nav-scroll-v1')
++      } catch (err) {
++        return
++      }
++      if (saved === null) return
++
++      const scrollTop = Number(saved)
++      const scrollElement = this.getNavScrollElement()
++      if (!scrollElement || !Number.isFinite(scrollTop)) return
++      scrollElement.scrollTop = scrollTop
++      try {
++        window.sessionStorage.removeItem('wikijs-nav-scroll-v1')
++      } catch (err) {
++        // Ignore storage restrictions (private browsing / disabled storage).
++      }
++    },
      goHome () {
        if (this.locales && this.locales.length > 0) {
+         window.location.assign(`/${this.locale}/home`)
+@@ -701,7 +773,7 @@ export default {
+       if (window.innerWidth === this.winWidth) { return }
+       this.winWidth = window.innerWidth
+       if (this.$vuetify.breakpoint.mdAndUp) {
+-        this.navShown = true
++        this.navShown = !this.navDrawerCollapsed
+       } else {
+         this.navShown = false
+       }
+@@ -718,6 +790,23 @@ export default {
+ 
+ <style lang="scss">
+ 
++.nav-drawer {
++  .v-navigation-drawer__content {
++    overflow: hidden !important;
++  }
++}
++
++.nav-drawer-scroll {
++  height: 100%;
++  min-height: 0;
++  overscroll-behavior: contain;
++}
++
++.nav-drawer-scroll .__view,
++.nav-drawer-scroll .__panel {
++  overscroll-behavior: contain;
++}
++
+ .breadcrumbs-nav {
+   .v-btn {
+     min-width: 0;
 diff --git a/server/controllers/common.js b/server/controllers/common.js
 index dec6fa3..c9a3e66 100644
 --- a/server/controllers/common.js
